@@ -1,267 +1,271 @@
-# Событие — подбор event-подрядчиков
+# Событие / Event — подбор подрядчиков для мероприятий
 
-Платформа команды **AI House**: форма и помощник используют единый сервис рекомендаций. На запрос возвращаются до трёх подрядчиков с конкретными объяснениями, проверенной занятостью и ссылкой на факты профиля.
+**Русский · [English](#event--event-vendor-recommendation-platform)**
 
-Реализовано на основе документов в `project-df`: исходное ТЗ, «Архитектура платформы подбора подрядчиков.docx» и `Use-cases.xlsx`. В Excel заполнены UC-01–UC-13; UC-14–UC-20 пустые. Дополнительные сценарии реализованы по документу архитектуры.
+«Событие» — веб-приложение для подбора подрядчиков на мероприятия. Пользователь задаёт город, дату, формат, категорию и бюджет, а система применяет обязательные фильтры и показывает до трёх подходящих профилей с объяснениями и ссылками на факты. Форма и чат-помощник работают с одним запросом.
 
-## Быстрый запуск на Windows
+Проект подготовлен командой **AI House**. Каталог содержит 66 профилей; часть профилей и часть значений помечены как синтетические или восстановленные. Приложение не бронирует подрядчиков, не отправляет заявки и не принимает оплату.
 
-Требуются Python 3.12+ и Node.js 20.19+ (или 22+).
+## Возможности
 
-Из корня репозитория:
+- Подбор по городу, дате, формату события, категории, бюджету, языку и длительности.
+- Строгие фильтры доступности, цены и других условий; ранжирование подходящих профилей по пожеланиям.
+- До трёх карточек с объяснениями, цитатами из описания и раскрываемыми основаниями; просмотр полного профиля и сравнение кандидатов.
+- Пересчёт альтернатив даты, бюджета, языка и длительности. Альтернатива применяется только после выбора пользователем.
+- Чат для изменения запроса и обсуждения текущих результатов. Без ключа внешнего API доступен ограниченный локальный помощник.
+- История последних 20 подборок текущего мероприятия и сохранение запроса в браузерной сессии.
+- Локальная SQLite по умолчанию; PostgreSQL при запуске через Docker Compose.
+- Интерфейс на русском языке, адаптивная вёрстка и управление с клавиатуры.
 
-```powershell
-.\start.cmd
+## Быстрый запуск
+
+### Docker Compose (любой поддерживаемой Docker ОС)
+
+Установите и запустите Docker Desktop либо Docker Engine с Compose v2, затем в корне клонированного репозитория выполните:
+
+```sh
+docker compose up --build
 ```
 
-Откройте **http://127.0.0.1:8000**. API-документация: **http://127.0.0.1:8000/docs**. Остановка — `Ctrl+C` в терминале.
+Откройте [http://127.0.0.1:8000](http://127.0.0.1:8000). Остановка: `Ctrl+C`; остановить контейнеры, сохранив данные: `docker compose down`. Данные PostgreSQL и приложения хранятся в Docker volumes. Локальный демонстрационный пароль PostgreSQL задан в Compose; перед использованием вне локальной демонстрации задайте собственный `POSTGRES_PASSWORD` в `.env`.
 
-Скрипт создаст окружение, если его нет, установит недостающие зависимости и соберёт интерфейс при первом запуске. Повторный запуск готовой сборки не требует сети. Для пересборки после изменений frontend:
+### Локальный запуск без Docker
 
-```powershell
-.\start.cmd --rebuild
-```
+Требуются **Python 3.12+**, **Node.js 20.19+ или 22+** и npm. Команды ниже выполняются из корня репозитория.
 
-Также доступен `./start.ps1` с параметрами `-Rebuild` и `-Setup`. В этой Windows выполнение `.ps1` запрещено системной политикой, поэтому основной запуск сделан через `start.cmd`: менять политику PowerShell не требуется.
+#### macOS и Linux
 
-Локально используется SQLite (`data/platform.db`). Регистрация и API-ключ не нужны для формы, фильтров, сравнения, альтернатив и ограниченного локального помощника. Папка `data/` создаётся автоматически и не включена в Git.
-
-## Ручной запуск и разработка
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r backend/requirements.txt
 cd frontend
 npm ci
 npm run build
 cd ..
-.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-Для разработки запустите backend с `--reload`, а во втором терминале:
+#### Windows (PowerShell)
 
 ```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r backend/requirements.txt
+Set-Location frontend
+npm ci
+npm run build
+Set-Location ..
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Если запуск PowerShell-скриптов запрещён политикой компьютера, активировать окружение не обязательно. Используйте `.\.venv\Scripts\python.exe -m pip ...` и `.\.venv\Scripts\python.exe -m uvicorn ...` вместо `python -m ...`. Также в комплекте есть `start.cmd` (Windows) и `start.ps1`.
+
+Приложение: [http://127.0.0.1:8000](http://127.0.0.1:8000). Документация API: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). Остановка сервера: `Ctrl+C`.
+
+Первый запуск устанавливает пакеты и собирает frontend, поэтому требуется подключение к интернету. При последующих запусках можно использовать готовую сборку. Для пересборки после изменений интерфейса выполните `npm run build` в папке `frontend`.
+
+## Разработка
+
+Для backend используйте установленный виртуальный env и запустите из корня:
+
+```sh
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+В отдельном терминале:
+
+```sh
 cd frontend
 npm run dev
 ```
 
-Frontend доступен на `http://127.0.0.1:5173`; Vite проксирует `/api` на порт 8000. В Linux/macOS используйте `.venv/bin/python` вместо `.venv\Scripts\python.exe`.
+Интерфейс разработки доступен на [http://127.0.0.1:5173](http://127.0.0.1:5173); Vite направляет запросы `/api` на backend. На Windows замените `python` на `.venv\Scripts\python.exe`, если окружение не активировано.
 
-Точные версии проверенного Python-окружения записаны в `backend/requirements-tested.txt`. Для их воспроизведения можно установить зависимости с дополнительным параметром `-c backend/requirements-tested.txt`. Frontend зафиксирован в `package-lock.json`.
+## Помощник и смысловой поиск
 
-## Docker + PostgreSQL
+Приложение работает без API-ключа и внешних сервисов. По умолчанию действует локальный режим помощника (ограниченный разбор распространённых русских формулировок), а ранжирование пожеланий использует встроенный словарь признаков и текстовое сходство. Этот режим не является языковой моделью или нейросетевыми embeddings.
 
-```powershell
-docker compose up --build
-```
-
-Приложение: `http://127.0.0.1:8000`. PostgreSQL хранит данные в отдельном Docker volume; наружу порт базы не публикуется. Для остановки без удаления данных: `docker compose down`.
-
-Docker Engine должен быть запущен. В среде разработки служба Docker была выключена, поэтому фактический запуск Compose/PostgreSQL здесь **не проверен**. Локальная версия с SQLite проверена автоматическими API- и браузерными тестами.
-
-## Что уже работает
-
-- Обязательные поля: город, дата, формат, категория, бюджет **на одного подрядчика**.
-- Дополнительные поля: длительность, язык, свободные пожелания.
-- Строгие ограничения: занятость, формат, стартовая цена, язык, часы.
-- До трёх рекомендаций; отдельные исходы `MATCHED`, `CATEGORY_ABSENT`, `NO_MATCH`.
-- Объяснения из конкретных полей и цитат; раскрываемые основания и полный профиль.
-- Сравнение двух или трёх кандидатов.
-- Реально рассчитанные альтернативы даты, бюджета, языка и длительности, применяемые только по нажатию.
-- Изменение даты с объяснением изменения состава карточек.
-- История последних 20 запусков текущего мероприятия; сохранение чата и запроса между перезагрузками в той же браузерной сессии.
-- Единый запрос формы и чата, контроль версий, защита от устаревших изменений.
-- Показанная подборка — контекст чата: полные сведения о кандидатах, их порядок, условия и причины выбора; вопросы про «второго» не изменяют фильтры.
-- Отметки синтетических профилей, проставленных цен и городов.
-- Адаптивный интерфейс, клавиатурная навигация, модальные окна с управлением фокусом.
-
-Бронирование, оплата, заявки и сообщения подрядчикам не выполняются — это ограничение ТЗ.
-
-## Помощник и режимы ИИ
-
-Создайте локальный `.env` на основе `.env.example`, если хотите включить внешний ИИ. Не добавляйте ключи в репозиторий.
+Чтобы включить чат через совместимый с OpenAI Chat Completions API сервис, скопируйте `.env.example` в `.env`, задайте ключ и при необходимости измените модель:
 
 ```dotenv
 OPENAI_API_KEY=your-api-key
-OPENAI_CHAT_MODEL=gpt-4.1-mini
 OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_CHAT_MODEL=gpt-4.1-mini
 ```
 
-Перезапустите backend. Модель настраивается и должна поддерживать Chat Completions с function calling. В интеграции используются официальные схемы [вызова функций OpenAI](https://developers.openai.com/api/docs/guides/function-calling).
+Перезапустите backend. Не публикуйте `.env` и не добавляйте реальные ключи в Git. Внешняя модель выбирает ограниченные действия помощника; подбор и проверку фактов выполняет backend.
 
-LLM выбирает один ограниченный инструмент за сообщение: изменить запрос, повторить подбор, открыть профиль, сравнить, рассчитать альтернативы, пояснить возможности или задать вопрос. Все изменения повторно проверяются Pydantic. Ответы о подрядчиках собираются backend из результата инструмента: модель не определяет итоговую тройку и не сочиняет цены или доступность.
+Опциональные нейросетевые embeddings настраиваются отдельно через `EMBEDDING_PROVIDER`: `openai` требует `OPENAI_API_KEY`, `sentence-transformers` — установку `backend/requirements-semantic.txt` и загрузку модели при первом запуске. Вариант по умолчанию — `local`. Ошибка внешнего провайдера возвращается как ошибка сервиса и не подменяется незаметно локальной сортировкой.
 
-Без ключа работает **локальный помощник**, явно помеченный в интерфейсе. Он разбирает распространённые русские формулировки регулярными выражениями и использует те же инструменты. Это ограниченный резервный режим, **не языковая модель**. При таймауте/ошибке внешнего API происходит явный переход в него.
+## Данные и хранение
 
-Примеры:
+Исходный каталог находится в `project-df/hackathon dataset anonymized .csv`. При старте он проверяется и импортируется целиком. SQLite создаётся автоматически в `data/platform.db`; папка `data/` не включается в Git. Compose вместо неё использует PostgreSQL и постоянные Docker volumes. Настройки можно переопределить в `.env` (см. `.env.example`).
+
+Сессия определяется случайной HttpOnly-cookie; запросы и история привязаны к сессии браузера. Календарные данные каталога охватывают период **23 сентября — 31 декабря 2026 года**. Отметки синтетических профилей и восстановленных значений показываются в интерфейсе.
+
+## Проверки и команды каталога
+
+Из корня проекта:
+
+```sh
+python -m pip install -r backend/requirements-dev.txt
+python -m pytest -q
+python -m backend.cli validate
+python -m backend.cli prepare
+python -m backend.cli benchmark
+```
+
+Для Windows при неактивном окружении используйте `.venv\Scripts\python.exe` вместо `python`. Frontend собирается командой `npm run build` из `frontend`. Браузерные проверки: `npm run test:e2e` из `frontend` (требуют собранный frontend и установленный Google Chrome). E2E поднимают тестовый backend отдельно на порту 8765.
+
+## Структура
 
 ```text
-Нужен ведущий в Алматы на корпоратив 10 октября 2026, до миллиона,
-на русском, на 6 часов. Хочется интеллигентного юмора.
-А теперь на 17 октября
-Сравни варианты
-Расскажи про второго
-Второй говорит на английском?
-Кто из них дешевле?
-Почему Куррапика не попал в подборку?
-Покажи другие даты
+backend/       FastAPI API, каталог, фильтры, ранжирование, помощник и SQLite/PostgreSQL
+frontend/      React, TypeScript и Vite
+project-df/    исходное ТЗ, архитектура, use cases и обезличенный CSV-каталог
+docs/          соответствие сценариев требованиям
+compose.yaml   приложение и PostgreSQL для Docker Compose
+Dockerfile     сборка frontend и backend-образа
+start.cmd      установочный запуск для Windows CMD
+start.ps1      установочный запуск для PowerShell
 ```
 
-После поиска через форму в чате появляется блок **«Вижу вашу подборку»** с теми же кандидатами в том же порядке. Их можно обсудить по имени или номеру; модель получает описания, цены, языки, длительность, причины выбора и исходные условия. Для вопросов по карточкам поиск повторно не запускается. Ответы формируются из сохранённого результата; цитаты, выбранные моделью, проверяются по исходному описанию.
+Исходные документы проекта находятся в `project-df`; соответствие реализованных сценариев use cases описано в [docs/use-cases.md](docs/use-cases.md).
 
-Каждое сообщение передаёт `displayed_run_id`. Backend проверяет, что подборка принадлежит текущему запросу и сессии. Это исключает подмену контекста более новым запуском в другой вкладке. Если фильтры изменены, но новый поиск ещё не выполнен, чат явно обсуждает предыдущую подборку. После нового поиска контекст обновляется; при пустой выдаче старые кандидаты не используются.
+---
 
-Реальный вызов OpenAI не проверялся: API-ключ не предоставлен. Контракт вызова и отказоустойчивость проверяются с подменённым внешним ответом в тестах.
+## Event — event vendor recommendation platform
 
-## Смысловое ранжирование
+**[Русский](#событие--подбор-подрядчиков-для-мероприятий) · English**
 
-Три явно различимых режима, выбранных через `EMBEDDING_PROVIDER`:
+Event is a web application for finding vendors for an event. A user enters a city, date, event format, category, and budget. The backend applies hard constraints and returns up to three eligible profiles with explanations and links to supporting facts. The form and chat assistant operate on the same request.
 
-| Значение | Что используется | Требования |
-| --- | --- | --- |
-| `local` (по умолчанию) | Фиксированный словарь смысловых признаков + совпадение текстовых основ | Работает без сети и моделей; ограниченное качество |
-| `openai` | Предобученные embeddings через API; векторы профилей и запросов кешируются в БД | API-ключ, сеть, доступная embedding-модель |
-| `sentence-transformers` | Локальная предобученная мультиязычная модель | Дополнительные зависимости и скачанные веса |
+The project was built by **AI House**. Its catalog contains 66 profiles; some profiles and values are marked as synthetic or imputed. The application does not book vendors, send inquiries, or process payments.
 
-`local` не выдаётся за нейросетевые embeddings. Он позволяет воспроизвести все основные сценарии без внешних зависимостей. Для полноценного нейросетевого сопоставления включите один из двух других режимов.
+## Features
 
-OpenAI embeddings:
+- Search by city, date, event format, category, budget, language, and duration.
+- Hard availability, price, and other constraints; preference-based ranking of eligible profiles.
+- Up to three recommendation cards with explanations, description excerpts, expandable evidence, full profiles, and comparison.
+- Recalculated alternatives for date, budget, language, and duration. An alternative is applied only after the user selects it.
+- Chat for editing the request and discussing the current results. A limited local assistant works without an external API key.
+- The latest 20 runs for the current event and request persistence within the browser session.
+- SQLite by default for local use; PostgreSQL with Docker Compose.
+- Russian-language interface, responsive layout, and keyboard navigation.
 
-```dotenv
-EMBEDDING_PROVIDER=openai
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+## Quick start
+
+### Docker Compose (supported Docker platforms)
+
+Install and start Docker Desktop or Docker Engine with Compose v2. From the cloned repository root, run:
+
+```sh
+docker compose up --build
 ```
 
-```powershell
-.\.venv\Scripts\python.exe -m backend.cli prepare
-```
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Stop with `Ctrl+C`; run `docker compose down` to stop containers while retaining data. PostgreSQL and application data are stored in Docker volumes. Compose includes a local demo PostgreSQL password; set your own `POSTGRES_PASSWORD` in `.env` before using this setup beyond a local demo.
 
-Для локальной модели рекомендуется отдельное окружение Python 3.12/3.13 с поддерживаемым PyTorch:
+### Run locally without Docker
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r backend/requirements-semantic.txt
-```
+Requirements: **Python 3.12+**, **Node.js 20.19+ or 22+**, and npm. Run these commands from the repository root.
 
-```dotenv
-EMBEDDING_PROVIDER=sentence-transformers
-SENTENCE_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-```
+#### macOS and Linux
 
-Затем выполните `python -m backend.cli prepare` из нужного окружения. Первый запуск скачивает веса; далее можно использовать локальный кеш модели. Эти два режима реализованы, но реальные удалённые вызовы и скачивание весов в текущей среде не проверялись.
-
-Embeddings профилей считаются при подготовке/старте и сохраняются. Новые запросы кодируются отдельно, их векторы кешируются. При отказе активного embedding-провайдера система сообщает техническую ошибку: она не меняет незаметно алгоритм и порядок выдачи.
-
-## Пайплайн
-
-```mermaid
-flowchart TD
-  CSV[CSV] --> Import[Проверка и версия каталога]
-  Import --> Profiles[Профили и календари]
-  Profiles --> Index[Признаки и индекс]
-  Form[Форма] --> Draft[Запрос с номером версии]
-  Chat[Чат] --> Tools[Интерпретация и инструменты]
-  Tools --> Draft
-  Draft --> Validate[Валидация]
-  Validate --> Filter[Строгие фильтры]
-  Profiles --> Filter
-  Filter --> Rank[Детерминированное ранжирование]
-  Index --> Rank
-  Rank --> Explain[Факты и цитаты]
-  Explain --> Result[До 3 карточек]
-  Filter --> Alternatives[Проверенные альтернативы]
-  Result --> History[История и диагностика]
-```
-
-Порядок ранжирования: число совпавших смысловых признаков → текстовое/векторное сходство → меньшая стартовая цена → ID. Без пожеланий используется цена → ID. Сходство не является оценкой качества услуг или вероятностью успеха.
-
-Каждый запуск сохраняет нормализованные условия, версии каталога/правил/индекса, состав карточек и причины исключения. Одинаковый запрос в одной версии даёт одинаковый порядок. Обновление каталога или конфигурации может изменить результат.
-
-Календари действуют только **23.09–31.12.2026**. `max_hours = null` у флористов, декораторов и сувениров означает неприменимость часов. «Работаю по всему миру» в описании не отменяет фильтр города. При конфликте описания и структурированных полей строгие ограничения определяются полями.
-
-## Хранение и структура
-
-```text
-backend/
-  main.py          HTTP API, сессии, версии запросов, раздача frontend
-  schemas.py       Валидация формы и контрактов
-  catalog.py       Проверка и импорт CSV
-  engine.py        Фильтры, ранжирование, объяснения, альтернативы
-  semantic.py      Признаки, evidence, три режима сопоставления
-  assistant.py     Инструменты LLM и локальный разбор сообщений
-  storage.py       SQLAlchemy: каталог, запросы, запуски, чат, векторы
-  cli.py           Проверка данных, индексация, диагностика
-  tests/           Интеграционные и предметные тесты
-frontend/
-  src/             React + TypeScript, стили, API-клиент
-  tests/           Playwright: реальные пользовательские сценарии
-project-df/        Исходные документы и неизменённый датасет
-docs/             Матрица требований
-```
-
-Для небольшой выборки профиль хранится как проверенный JSON в таблице `contractors`, включая календарь. Цитаты извлекаются детерминированно из исходного описания и сохраняются в снимке результата; отдельной таблицы редактируемых признаков нет. Это упрощение физической модели архитектуры, не изменение правил подбора. При старте CSV импортируется целиком одной транзакцией; повреждённый файл не публикуется частично.
-
-SQLAlchemy поддерживает SQLite для локального запуска и PostgreSQL для Compose. Сессия использует случайный HttpOnly/SameSite-cookie. Доступ к запросу проверяется по владельцу; знания ID недостаточно. История относится к текущему мероприятию. При «Новом мероприятии» начинается новый запрос; общего кабинета со списком всех мероприятий пока нет.
-
-## API
-
-| Метод | Путь | Назначение |
-| --- | --- | --- |
-| GET | `/api/health` | Проверка готовности |
-| GET | `/api/catalog/options` | Справочники, количество профилей, режимы |
-| POST | `/api/selection-requests` | Создать черновик |
-| GET / PATCH | `/api/selection-requests/{id}` | Получить / обновить запрос |
-| POST | `/api/selection-requests/{id}/recommendations` | Выполнить подбор |
-| POST | `/api/selection-requests/{id}/alternatives` | Рассчитать альтернативы |
-| POST | `/api/selection-requests/{id}/compare` | Сравнить текущие карточки |
-| GET | `/api/contractors/{id}` | Полный профиль |
-| POST | `/api/chat/messages` | Сообщение помощнику |
-
-Изменения и подбор принимают `expected_revision`. Устаревшая версия даёт `409`; неполный/некорректный запрос — `422`; отсутствие чужого или неизвестного запроса — `404`. Сбой embedding-провайдера — `503`, а не `NO_MATCH`.
-
-## Проверки
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m backend.cli validate
-.\.venv\Scripts\python.exe -m backend.cli benchmark
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r backend/requirements.txt
 cd frontend
+npm ci
 npm run build
-npm run test:e2e
+cd ..
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-Playwright использует установленный Google Chrome без окна и автоматически запускает отдельный backend на порту **8765**, с базой `data/e2e.db`, без API-ключа и с локальным сопоставлением. Пользовательский сервер на порту 8000 тесты не затрагивают. Перед браузерными тестами обязательно соберите frontend. Скриншоты сохраняются в `data/screenshots/`, ошибки и трассы — в `frontend/test-results/`.
-
-Порт 8765 должен быть свободен. Тестовые настройки передаются только процессу тестового сервера; файл `.env` не изменяется.
-
-Проверяются календарь на всех 100 датах, язык, часы, площадки, редкие категории, оба вида пустого результата, проверяемость альтернатив, повторы, версии, изоляция сессий, работа при отказе LLM, профиль, сравнение, история и мобильный экран. Соответствие Excel: [docs/use-cases.md](docs/use-cases.md).
-
-## Демонстрация для жюри
-
-Язык и длительность в следующих запросах оставлены пустыми.
-
-| Город / категория / формат | Дата | Бюджет | Ожидаемый результат до выбора тройки |
-| --- | --- | --- | --- |
-| Алматы / ведущий / корпоратив | 10.10.2026 | 1 000 000 ₸ | 4 подходящих, показаны 3 |
-| Те же условия | 17.10.2026 | 1 000 000 ₸ | 3 подходящих, другой состав |
-| Алматы / флорист / свадьба | 10.10.2026 | 500 000 ₸ | Только Тони Тони Чоппер |
-| Те же условия | 17.10.2026 | 500 000 ₸ | Только Тихиро Огино |
-| Алматы / ведущий / корпоратив | 10.10.2026 | 10 000 ₸ | `NO_MATCH` |
-| Астана / декоратор / свадьба | 10.10.2026 | 3 000 000 ₸ | `CATEGORY_ABSENT` |
-
-На локальной машине контрольный прогон движка дал медиану около 0,4 мс и максимум около 3 мс для пяти базовых запросов. Это время только движка: сеть, LLM, запуск модели и отрисовка в него не входят. Общий ориентир ТЗ — до 10 секунд; задержку внешнего API следует измерять после подключения ключа.
-
-## Обслуживание каталога
+#### Windows (PowerShell)
 
 ```powershell
-.\.venv\Scripts\python.exe -m backend.cli validate --dataset "project-df/hackathon dataset anonymized .csv"
-.\.venv\Scripts\python.exe -m backend.cli features
-.\.venv\Scripts\python.exe -m backend.cli prepare
-.\.venv\Scripts\python.exe -m backend.cli inspect-run --run-id ID_ИЗ_ОТВЕТА
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r backend/requirements.txt
+Set-Location frontend
+npm ci
+npm run build
+Set-Location ..
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-После изменения CSV проверьте его и перезапустите backend. Можно задать другой путь через `DATASET_PATH`. Добавленные демонстрационные профили должны иметь `synthetic=True`. Исходные 66 профилей не изменены.
+If your system policy blocks PowerShell scripts, activation is optional. Use `.\.venv\Scripts\python.exe -m pip ...` and `.\.venv\Scripts\python.exe -m uvicorn ...` instead of `python -m ...`. The repository also includes `start.cmd` (Windows) and `start.ps1`.
 
-Приложение предназначено для локального демо. Перед публичным развёртыванием нужны HTTPS (`COOKIE_SECURE=true`), ограничения частоты запросов и расходов на API, авторизация администрирования, стратегия миграций и резервного копирования. В текущей конфигурации следует использовать один backend worker; версионирование запросов также защищается SQL-проверкой ревизии.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000); API documentation is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). Stop the server with `Ctrl+C`.
 
-Команда: **AI House**. Репозиторий: `hack-423e0010-ai-house`. Исходный README: Nurlan.
+The first run installs packages and builds the frontend, so it needs internet access. Later runs can use the existing build. After frontend changes, rebuild by running `npm run build` in `frontend`.
 
+## Development
+
+With the Python virtual environment active, start the backend from the repository root:
+
+```sh
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+In a second terminal:
+
+```sh
+cd frontend
+npm run dev
+```
+
+The development UI is available at [http://127.0.0.1:5173](http://127.0.0.1:5173); Vite proxies `/api` requests to the backend. On Windows, use `.venv\Scripts\python.exe` instead of `python` if the environment is not activated.
+
+## Assistant and semantic search
+
+The app works without API keys or external services. By default, chat uses a limited local parser for common Russian requests, and preference ranking uses a built-in concept vocabulary and text similarity. This mode is not an LLM or a neural embedding model.
+
+To enable chat through a service compatible with the OpenAI Chat Completions API, copy `.env.example` to `.env`, set a key, and change the model if needed:
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_CHAT_MODEL=gpt-4.1-mini
+```
+
+Restart the backend. Do not commit `.env` or publish real keys. The external model selects from constrained assistant actions; the backend performs matching and verifies facts.
+
+Optional neural embeddings are configured separately with `EMBEDDING_PROVIDER`: `openai` requires `OPENAI_API_KEY`; `sentence-transformers` requires installing `backend/requirements-semantic.txt` and downloading the model on first use. The default is `local`. An external provider failure is returned as a service error and does not silently switch to local ranking.
+
+## Data and persistence
+
+The source catalog is `project-df/hackathon dataset anonymized .csv`. It is validated and imported atomically at startup. SQLite is created automatically at `data/platform.db`; `data/` is excluded from Git. Compose uses PostgreSQL and persistent Docker volumes instead. Override settings in `.env` (see `.env.example`).
+
+A random HttpOnly cookie identifies the browser session; requests and history belong to that session. Catalog calendars cover **September 23 through December 31, 2026**. Synthetic profiles and imputed values are identified in the interface.
+
+## Checks and catalog commands
+
+From the project root:
+
+```sh
+python -m pip install -r backend/requirements-dev.txt
+python -m pytest -q
+python -m backend.cli validate
+python -m backend.cli prepare
+python -m backend.cli benchmark
+```
+
+On Windows with an inactive environment, use `.venv\Scripts\python.exe` in place of `python`. Build the frontend with `npm run build` from `frontend`. Browser checks: `npm run test:e2e` from `frontend` (requires a built frontend and Google Chrome). E2E tests start a separate test backend on port 8765.
+
+## Project layout
+
+```text
+backend/       FastAPI API, catalog, filtering, ranking, assistant, SQLite/PostgreSQL
+frontend/      React, TypeScript, and Vite
+project-df/    source brief, architecture, use cases, and anonymized CSV catalog
+docs/          mapping of implemented behavior to requirements
+compose.yaml   app and PostgreSQL for Docker Compose
+Dockerfile     frontend build and backend image
+start.cmd      setup and launch for Windows CMD
+start.ps1      setup and launch for PowerShell
+```
+
+Source project documents are in `project-df`; implementation coverage of the use cases is documented in [docs/use-cases.md](docs/use-cases.md).
