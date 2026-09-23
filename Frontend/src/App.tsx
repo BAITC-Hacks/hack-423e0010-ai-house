@@ -22,6 +22,10 @@ import { Modal } from './components/Modal'
 import { ProfileDetails } from './components/ProfileDetails'
 import { RequestForm } from './components/RequestForm'
 import { Results } from './components/Results'
+import { AgentExplanation, AgentSummary } from './components/AgentExplanation'
+import { NaturalRequest, fieldNames } from './components/NaturalRequest'
+import { explainSelection } from './services/agent'
+import type { AgentResponse, NearbyOption, ParsedRequest } from './domain/agent'
 import {
   dateLabel,
   defaultForm,
@@ -60,7 +64,7 @@ function loadSaved(): Profile[] {
     return []
   }
 }
-type DialogState = 'how' | 'favorites' | 'compare' | 'helper' | null
+type DialogState = 'how' | 'favorites' | 'compare' | 'helper' | 'agent' | null
 
 function App() {
   const [form, setForm] = useState<FormValues>(loadForm)
@@ -77,12 +81,37 @@ function App() {
   } | null>(null)
   const [helperText, setHelperText] = useState('')
   const [toast, setToast] = useState('')
+  const [agentData, setAgentData] = useState<AgentResponse | null>(null)
+  const [agentLoading, setAgentLoading] = useState(false)
+  const [agentError, setAgentError] = useState('')
+  const agentController = useRef<AbortController | null>(null)
   const controller = useRef<AbortController | null>(null)
   const initialForm = useRef(form)
   const workbench = useRef<HTMLElement>(null)
 
-  const search = useCallback(async (request: SelectionRequest) => {
+  const runAgent = useCallback(async (selection: SelectionResponse) => {
+    agentController.current?.abort()
+    const next = new AbortController()
+    agentController.current = next
+    setAgentLoading(true)
+    setAgentError('')
+    setAgentData(null)
+    try {
+      const response = await explainSelection(selection.request, selection, next.signal)
+      if (!next.signal.aborted) setAgentData(response)
+    } catch (cause) {
+      if (!next.signal.aborted) setAgentError(cause instanceof Error ? cause.message : 'Не удалось получить разбор агента.')
+    } finally {
+      if (!next.signal.aborted) setAgentLoading(false)
+    }
+  }, [])
+
+  const search = useCallback(async (request: SelectionRequest, withAgent = true) => {
     controller.current?.abort()
+    agentController.current?.abort()
+    setAgentData(null)
+    setAgentError('')
+    setAgentLoading(false)
     const nextController = new AbortController()
     controller.current = nextController
     setLoading(true)
@@ -90,7 +119,14 @@ function App() {
     setCompared([])
     try {
       const response = await getRecommendations(request, nextController.signal)
-      if (!nextController.signal.aborted) setResult(response)
+      if (!nextController.signal.aborted) {
+        setResult(response)
+        if (withAgent) {
+          setActiveProfile(null)
+          setDialog('agent')
+          void runAgent(response)
+        }
+      }
     } catch (cause) {
       if (!nextController.signal.aborted)
         setError(
@@ -101,11 +137,11 @@ function App() {
     } finally {
       if (!nextController.signal.aborted) setLoading(false)
     }
-  }, [])
+  }, [runAgent])
   useEffect(() => {
     const initial = parseForm(initialForm.current).request
-    if (isDemoMode && initial) void search(initial)
-    return () => controller.current?.abort()
+    if (isDemoMode && initial) void search(initial, false)
+    return () => { controller.current?.abort(); agentController.current?.abort() }
   }, [search])
   useEffect(() => {
     const parsed = parseForm(form).request
@@ -168,6 +204,37 @@ function App() {
     setForm(requestToForm(next))
     setErrors({})
     void search(next)
+  }
+  const applyNearby = (option: NearbyOption) => {
+    setForm(requestToForm(option.request))
+    setErrors({})
+    setDialog(null)
+    void search(option.request)
+  }
+  const applyNaturalRequest = (parsed: ParsedRequest) => {
+    const patch: Partial<FormValues> = {}
+    const fields = parsed.fields
+    if (fields.city && !parsed.invalid_fields.includes('city')) patch.city = fields.city
+    if (fields.event_date && !parsed.invalid_fields.includes('event_date')) patch.event_date = fields.event_date
+    if (fields.category) patch.category = fields.category
+    if (fields.event_format) patch.event_format = fields.event_format
+    if (fields.budget_kzt !== null && !parsed.invalid_fields.includes('budget_kzt')) patch.budget_kzt = String(fields.budget_kzt)
+    patch.duration_hours = fields.duration_hours === null || parsed.invalid_fields.includes('duration_hours') ? '' : String(fields.duration_hours)
+    patch.language = fields.language
+    patch.preferences = fields.preferences.slice(0, 500)
+    updateForm(patch)
+    if (parsed.ready) {
+      const request = requestSchema.safeParse(fields)
+      if (request.success) { setForm(requestToForm(request.data)); void search(request.data) }
+    } else {
+      setToast(`Уточните в форме: ${[...parsed.missing_fields, ...parsed.invalid_fields].map((name) => fieldNames[name]).join(', ')}. Остальные значения формы не подтверждены текстом.`)
+      focusForm()
+    }
+  }
+  const openAgent = () => {
+    if (!result) return
+    setDialog('agent')
+    if (!agentData && !agentLoading) void runAgent(result)
   }
   const save = (profile: Profile) => {
     const exists = saved.some((item) => item.id === profile.id)
@@ -306,6 +373,7 @@ function App() {
                 <HelpCircle size={13} />
               </button>
             </div>
+            <NaturalRequest onApply={applyNaturalRequest} />
             <div className="workspace-grid">
               <RequestForm
                 form={form}
@@ -337,6 +405,7 @@ function App() {
                 onEdit={focusForm}
                 onAlternative={applyAlternative}
                 demo={isDemoMode}
+                agentPanel={<AgentSummary data={agentData} loading={agentLoading} error={agentError} onOpen={openAgent} onApply={applyNearby} stale={stale} />}
               />
             </div>
           </section>
@@ -397,6 +466,11 @@ function App() {
         </div>
       )}
 
+      {!activeProfile && dialog === 'agent' && result && (
+        <Modal title="Объяснение и предложения агента" onClose={closeModal} wide>
+          <AgentExplanation data={agentData} loading={agentLoading} error={agentError} selection={result} onRetry={() => void runAgent(result)} onApply={applyNearby} stale={stale} />
+        </Modal>
+      )}
       {activeProfile && (
         <Modal title={activeProfile.profile.name} onClose={closeModal}>
           <ProfileDetails
@@ -590,7 +664,7 @@ function App() {
               </strong>
               <p>
                 {isDemoMode
-                  ? '66 анонимизированных профилей из вашего CSV. 13 из них синтетические; дополненные цены и города отмечены в карточках. Пожелания сопоставляются по ключевым словам — смысловой ИИ пока не подключён.'
+                  ? '66 анонимизированных профилей из вашего CSV. 13 из них синтетические; дополненные цены и города отмечены в карточках. Фильтры проверяются по данным. ИИ разбирает текстовый запрос и подробно объясняет выбранные и ближайшие варианты с опорой на подтверждённые факты.'
                   : 'Форма отправляет параметры в сервис и показывает его проверенный ответ.'}
               </p>
               <p>
@@ -692,7 +766,7 @@ function App() {
           </p>
           {isDemoMode && (
             <p className="helper-demo">
-              В демо используется поиск по ключевым словам, без диалогового ИИ.
+              Для разбора свободного текста используйте поле агента над формой. После подбора ИИ объяснит результат и возможные изменения условий.
             </p>
           )}
           <button

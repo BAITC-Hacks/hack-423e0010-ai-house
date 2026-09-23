@@ -15,6 +15,7 @@ import {
 import { dateLabel, money, plural, reasonLabels } from '../domain/selection'
 import type { Recommendation, SelectionRequest, SelectionResponse } from '../domain/selection'
 import { ContractorCard } from './ContractorCard'
+import type { ReactNode } from 'react'
 
 export function Results({
   result,
@@ -30,6 +31,7 @@ export function Results({
   onEdit,
   onAlternative,
   demo,
+  agentPanel,
 }: {
   result: SelectionResponse | null
   loading: boolean
@@ -44,6 +46,7 @@ export function Results({
   onEdit: () => void
   onAlternative: (patch: Partial<SelectionRequest>) => void
   demo: boolean
+  agentPanel?: ReactNode
 }) {
   return (
     <section className="results-column" aria-labelledby="results-heading" aria-busy={loading}>
@@ -287,6 +290,7 @@ export function Results({
           )}
         </>
       )}
+      {!loading && !error && result && agentPanel}
       <div className="trust-strip">
         <div>
           <ShieldCheck size={22} />
