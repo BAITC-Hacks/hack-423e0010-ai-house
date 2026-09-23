@@ -5,6 +5,7 @@ from app.config import MAX_RESULTS
 from app.domain.enums import RecommendationStatus, RejectionReason
 from app.domain.models import Contractor, RejectedCandidate
 from app.repositories.catalog import CatalogRepository
+from app.services.evidence import DescriptionEvidenceIndex
 from app.services.semantic import ScoredContractor, SemanticRanker
 
 # Cosine similarities are compared at this precision for tie-breaking so that
@@ -82,6 +83,7 @@ def recommend(
     query: RecommendQuery,
     repo: CatalogRepository,
     ranker: SemanticRanker | None = None,
+    evidence_index: DescriptionEvidenceIndex | None = None,
 ) -> RecommendResult:
     candidates = repo.find_by_city_and_category(query.city, query.category)
 
@@ -105,11 +107,23 @@ def recommend(
         )
 
     if _has_preferences(query) and ranker is not None:
-        scores = ranker.score(query.preferences, eligible)
+        # Encode the query once and reuse the same embedding for both
+        # ranking and evidence selection — never re-encoded per request.
+        query_embedding = ranker.encode_query(query.preferences)
+        scores = ranker.score_with_embedding(query_embedding, eligible)
         ordered = _rank_by_semantics(eligible, scores)
+        top = ordered[:MAX_RESULTS]
         scored = [
-            ScoredContractor(contractor=c, semantic_score=scores[c.id])
-            for c in ordered[:MAX_RESULTS]
+            ScoredContractor(
+                contractor=c,
+                semantic_score=scores[c.id],
+                evidence=(
+                    evidence_index.best_segment(query_embedding, c)
+                    if evidence_index is not None
+                    else None
+                ),
+            )
+            for c in top
         ]
     else:
         ordered = _rank_by_price(eligible)

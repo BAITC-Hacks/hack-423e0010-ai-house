@@ -76,6 +76,81 @@ reorders the already-eligible pool.
 - `HF_HUB_OFFLINE` is not set, so the app checks Hugging Face Hub for the pinned model on
   first load if not already cached; no network access needed once cached locally.
 
+## Phase 3 — explainability + semantic evaluation — implemented and verified (2026-09-23)
+
+Deterministic evidence extraction and explanation generation, plus a curated semantic
+evaluation harness, per `docs/spec.md` §9–§11 and `TASKS.md`. No LLM is used anywhere in
+this phase; every explanation sentence is traceable to a structured field or a verbatim
+description excerpt.
+
+**Implemented:**
+- `backend/app/domain/evidence.py` — `EvidenceMatch(excerpt, score)`.
+- `backend/app/services/evidence.py` — `DescriptionEvidenceIndex`: deterministic
+  sentence/newline segmentation (`segment_description`), segment embeddings for the whole
+  catalog precomputed once at construction (reuses the same E5 encode function as
+  `SemanticRanker`, never a second model load), `best_segment(query_embedding, contractor)`
+  selects the highest-cosine-similarity segment per contractor from an already-encoded
+  query vector (no extra encode call per request).
+- `backend/app/services/explanation.py` — `build_explanation(query, scored)`: deterministic
+  1–2 sentence Russian explanation combining structured facts (availability, format,
+  language when requested, duration vs. `max_hours`, `price_from_kzt` vs. `budget_kzt`
+  phrased as a starting price) with the selected semantic evidence excerpt when
+  `preferences` was supplied, attributed as "В описании подрядчик делает акцент на: «...»"
+  rather than asserted as verified fact.
+- `backend/app/services/recommendation.py` — `recommend()` takes an optional
+  `evidence_index`; the query embedding computed for ranking is reused for evidence
+  selection on the final ≤3 results only (still exactly one encode call per
+  preferences-bearing request). `ScoredContractor.evidence: EvidenceMatch | None`.
+- `backend/app/services/semantic.py` — `SemanticRanker.encode_query` /
+  `score_with_embedding` split out from `score()` so the query embedding can be shared
+  between ranking and evidence extraction; `default_encoder` now accepts a `revision`.
+- `backend/app/api/deps.py` — `get_encoder()` (`@lru_cache`), shared by
+  `get_semantic_ranker()` and the new `get_evidence_index()` so the model loads exactly
+  once. `app/main.py` lifespan warms both.
+- `backend/app/schemas/recommend.py` — `RecommendationEvidence`,
+  `ContractorCard.explanation` / `.evidence`, `RecommendResponse.rejection_summary`
+  (reason → count, aggregated from `rejected`).
+- `backend/app/config.py` — `EMBEDDING_MODEL_NAME` / `EMBEDDING_MODEL_REVISION` now
+  environment-configurable (see `docs/spec.md` §11 for reproducibility notes).
+- `backend/evaluation/cases.py` — 12 curated semantic-evaluation cases against the real
+  dataset (host style, wedding-photography style, decor style, national ensembles,
+  interactive photo booths, live-band sound, corporate gifts), each with a rationale citing
+  the actual description text and a strict (`expected_first`) or soft (`expected_in_top`)
+  expectation. `backend/evaluation/run.py` — standalone runner
+  (`python -m evaluation.run`), non-zero exit on a strict failure.
+- 36 new tests: `backend/tests/test_explanation.py` (segmentation, evidence-selection,
+  grounding rules, determinism, cross-contractor differentiation, real-model integration),
+  additions to `backend/tests/test_api.py` (schema fields, rejection summary, identical
+  explanation on repeat), `backend/tests/test_semantic_evaluation.py` (parametrized over
+  the evaluation cases).
+
+**Verified:**
+- `pytest` — 73/73 passing (37 Phase 1/2 + 36 new).
+- `python -m evaluation.run` — 12/12 cases, 0 strict failures, 0 soft failures (one case
+  documents a known model limitation — see below — without being forced to pass strictly).
+- Real 3-card example (Алматы / Ведущий / корпоратив / 2026-10-10 / budget 1,000,000 /
+  duration 6h / язык русский / preferences "спокойная деловая интеллигентная подача,
+  корпоративный стиль"): `HK-88430`, `HK-77838`, `HK-29829` returned with three distinct
+  explanation strings (different prices, different `max_hours`, different real evidence
+  excerpts from each profile's own description).
+- Repeated identical requests (with and without `preferences`) return identical
+  `results` order, `semantic_score` values, and `explanation` text.
+- Evidence/explanation never changes eligibility or ranking order versus the same request
+  run without an evidence index — verified in
+  `test_busy_and_ineligible_contractors_still_excluded_with_evidence_enabled`.
+- Warm-request latency after explainability: ~13–16 ms/call (`TestClient`, 20–30 call
+  average), up from ~11.5 ms in Phase 2 — still dominated by the single per-request query
+  encode call.
+
+**Known limitations found by the evaluation harness:**
+- Negation is not reliably handled by the E5 model: "серьёзный деловой стиль без
+  развлекательной программы" still ranked the dance/entertainment host first over the
+  explicitly business-styled host — the opposite of the non-negated query's result. Recorded
+  as a soft (non-blocking) evaluation case rather than masked; see `docs/spec.md` §10.
+- Short, generic contractor descriptions yield the same single evidence segment
+  regardless of query — there's nothing more specific in the profile to select.
+
 ## Not started
 
-Phases 3–4 in `TASKS.md` (chat assistant, PostgreSQL/persistence). Not touched this session.
+Phase 4 (chat assistant) and Phase 5 (PostgreSQL/persistence) in `TASKS.md`. Not touched
+this session.

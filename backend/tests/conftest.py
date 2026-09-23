@@ -5,7 +5,8 @@ import pytest
 from app.config import DATASET_CSV_PATH
 from app.domain.models import Contractor
 from app.repositories.catalog import CatalogRepository
-from app.services.semantic import SemanticRanker
+from app.services.evidence import DescriptionEvidenceIndex
+from app.services.semantic import SemanticRanker, default_encoder
 
 
 def make_contractor(
@@ -53,7 +54,26 @@ def real_catalog_repository_session() -> CatalogRepository:
 
 
 @pytest.fixture(scope="session")
-def real_semantic_ranker(real_catalog_repository_session: CatalogRepository) -> SemanticRanker:
-    # Loads intfloat/multilingual-e5-base and precomputes profile embeddings
-    # for the whole catalog exactly once per test session.
-    return SemanticRanker.from_catalog(real_catalog_repository_session.all())
+def real_encoder():
+    # Loads intfloat/multilingual-e5-base exactly once per test session;
+    # shared by the ranker and evidence-index fixtures below so the model is
+    # never loaded twice.
+    return default_encoder()
+
+
+@pytest.fixture(scope="session")
+def real_semantic_ranker(
+    real_catalog_repository_session: CatalogRepository, real_encoder
+) -> SemanticRanker:
+    # Precomputes profile embeddings for the whole catalog exactly once per
+    # test session.
+    return SemanticRanker(real_catalog_repository_session.all(), real_encoder)
+
+
+@pytest.fixture(scope="session")
+def real_evidence_index(
+    real_catalog_repository_session: CatalogRepository, real_encoder
+) -> DescriptionEvidenceIndex:
+    # Precomputes description-segment embeddings for the whole catalog
+    # exactly once per test session.
+    return DescriptionEvidenceIndex(real_catalog_repository_session.all(), real_encoder)

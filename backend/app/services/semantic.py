@@ -12,9 +12,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from app.config import EMBEDDING_MODEL_NAME, EMBEDDING_MODEL_REVISION
+from app.domain.evidence import EvidenceMatch
 from app.domain.models import Contractor
-
-EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-base"
 
 # E5 retrieval convention: queries and passages are encoded with distinct
 # prefixes so the model can tell the two roles apart.
@@ -46,15 +46,22 @@ def build_semantic_document(contractor: Contractor) -> str:
     return " ".join(part for part in parts if part)
 
 
-def default_encoder(model_name: str = EMBEDDING_MODEL_NAME) -> EncodeFn:
+def default_encoder(
+    model_name: str = EMBEDDING_MODEL_NAME,
+    revision: str | None = EMBEDDING_MODEL_REVISION,
+) -> EncodeFn:
     """Builds an `EncodeFn` backed by a real `sentence_transformers` model.
 
     Import is local so the (heavy) dependency is only touched when this
     factory is actually called, not on module import.
+
+    `revision` pins a specific Hugging Face Hub revision (commit SHA or tag)
+    for reproducibility; `None` (the default, unless `EMBEDDING_MODEL_REVISION`
+    is set) resolves the repo's default branch at load time.
     """
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(model_name)
+    model = SentenceTransformer(model_name, revision=revision)
 
     def encode(texts: list[str]) -> np.ndarray:
         return model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
@@ -86,12 +93,17 @@ class SemanticRanker:
     ) -> "SemanticRanker":
         return cls(contractors, default_encoder(model_name))
 
-    def score(self, preferences: str, candidates: list[Contractor]) -> dict[str, float]:
-        """Cosine similarity between the preference query and each candidate's
-        precomputed profile embedding. Only encodes the query text — profile
-        embeddings are never recomputed here.
+    def encode_query(self, preferences: str) -> np.ndarray:
+        """Encodes the free-text preference query once. Callers that need
+        both a ranking score and semantic evidence should call this once and
+        reuse the resulting vector (via `score_with_embedding` and
+        `DescriptionEvidenceIndex.best_segment`) rather than re-encoding.
         """
-        query_embedding = self._encode([QUERY_PREFIX + preferences.strip()])[0]
+        return self._encode([QUERY_PREFIX + preferences.strip()])[0]
+
+    def score_with_embedding(
+        self, query_embedding: np.ndarray, candidates: list[Contractor]
+    ) -> dict[str, float]:
         return {
             candidate.id: float(
                 np.dot(query_embedding, self._profile_embeddings[self._index[candidate.id]])
@@ -100,8 +112,16 @@ class SemanticRanker:
             if candidate.id in self._index
         }
 
+    def score(self, preferences: str, candidates: list[Contractor]) -> dict[str, float]:
+        """Cosine similarity between the preference query and each candidate's
+        precomputed profile embedding. Only encodes the query text — profile
+        embeddings are never recomputed here.
+        """
+        return self.score_with_embedding(self.encode_query(preferences), candidates)
+
 
 @dataclass(frozen=True)
 class ScoredContractor:
     contractor: Contractor
     semantic_score: float | None
+    evidence: EvidenceMatch | None = None

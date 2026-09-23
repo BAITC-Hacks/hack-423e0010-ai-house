@@ -16,6 +16,23 @@ class RecommendRequest(BaseModel):
     preferences: str | None = None
 
 
+class RecommendationEvidence(BaseModel):
+    """Structured facts backing `ContractorCard.explanation`. Every field is
+    either a verified structured match/value or a verbatim excerpt from the
+    contractor's own description — never an invented claim.
+    """
+
+    available_on_date: bool
+    matched_event_format: str
+    matched_language: str | None
+    requested_duration_hours: int | None
+    max_hours: int | None
+    price_from_kzt: int
+    budget_kzt: int
+    semantic_excerpt: str | None = None
+    semantic_score: float | None = None
+
+
 class ContractorCard(BaseModel):
     id: str
     name: str
@@ -29,6 +46,8 @@ class ContractorCard(BaseModel):
     city_imputed: bool
     price_imputed: bool
     semantic_score: float | None = None
+    explanation: str
+    evidence: RecommendationEvidence
 
 
 class RejectedCandidate(BaseModel):
@@ -40,3 +59,4 @@ class RecommendResponse(BaseModel):
     status: RecommendationStatus
     results: list[ContractorCard]
     rejected: list[RejectedCandidate]
+    rejection_summary: dict[str, int] = {}

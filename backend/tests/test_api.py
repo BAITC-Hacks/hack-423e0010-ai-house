@@ -166,6 +166,77 @@ def test_preferences_change_ranking_of_the_same_eligible_pool():
     assert business_style["results"][0]["id"] != dance_entertainment["results"][0]["id"]
 
 
+def test_recommend_cards_include_explanation_and_evidence():
+    payload = {
+        "city": "Алматы",
+        "event_date": "2026-10-10",
+        "event_format": "корпоратив",
+        "category": "Ведущий",
+        "budget_kzt": 1_000_000,
+        "duration_hours": 6,
+        "language": "русский",
+        "preferences": "спокойная деловая интеллигентная подача, корпоративный стиль",
+    }
+    response = client.post("/api/v1/recommend", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["results"]
+    for card in body["results"]:
+        assert card["explanation"].strip() != ""
+        evidence = card["evidence"]
+        assert evidence["available_on_date"] is True
+        assert evidence["matched_event_format"] == "корпоратив"
+        assert evidence["matched_language"] == "русский"
+        assert evidence["requested_duration_hours"] == 6
+        assert evidence["price_from_kzt"] == card["price_from_kzt"]
+        assert evidence["budget_kzt"] == payload["budget_kzt"]
+        assert evidence["semantic_excerpt"] is not None
+        assert evidence["semantic_score"] == card["semantic_score"]
+
+    texts = [card["explanation"] for card in body["results"]]
+    assert len(set(texts)) == len(texts)
+
+
+def test_recommend_cards_omit_semantic_evidence_without_preferences():
+    payload = {
+        "city": "Алматы",
+        "event_date": "2026-10-10",
+        "event_format": "корпоратив",
+        "category": "Ведущий",
+        "budget_kzt": 700_000,
+    }
+    response = client.post("/api/v1/recommend", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["results"]
+    for card in body["results"]:
+        assert card["evidence"]["semantic_excerpt"] is None
+        assert card["evidence"]["semantic_score"] is None
+        assert "акцент" not in card["explanation"]
+
+
+def test_rejection_summary_aggregates_reasons_by_count():
+    payload = {
+        "city": "Алматы",
+        "event_date": "2026-10-10",
+        "event_format": "корпоратив",
+        "category": "Ведущий",
+        "budget_kzt": 1_000_000,
+    }
+    response = client.post("/api/v1/recommend", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+
+    reason_counts: dict[str, int] = {}
+    for rejected in body["rejected"]:
+        for reason in rejected["reasons"]:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    assert body["rejection_summary"] == reason_counts
+
+
 def test_repeated_identical_preferences_return_identical_order_via_api():
     payload = {
         "city": "Алматы",
@@ -181,4 +252,7 @@ def test_repeated_identical_preferences_return_identical_order_via_api():
     assert [c["id"] for c in first["results"]] == [c["id"] for c in second["results"]]
     assert [c["semantic_score"] for c in first["results"]] == [
         c["semantic_score"] for c in second["results"]
+    ]
+    assert [c["explanation"] for c in first["results"]] == [
+        c["explanation"] for c in second["results"]
     ]
