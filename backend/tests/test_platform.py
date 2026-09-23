@@ -309,3 +309,153 @@ def test_source_fields_override_marketing_description(engine):
     request=Draft.model_validate({**query().model_dump(), 'event_date':'2026-10-17','event_format':'конференция'})
     assert kiki['id'] not in [p['id'] for p in engine.recommend(request)['cards']]
 
+
+def chat_about(client, item, result, message):
+    response = client.post('/api/chat/messages', json={
+        'request_id': item['id'], 'expected_revision': item['revision'],
+        'message': message, 'displayed_run_id': result['run_id'] if result else None,
+    })
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_form_selection_is_chat_context_without_repeating_search(client, monkeypatch):
+    item = create(client)
+    result = run(client, item)
+    def no_search(*args, **kwargs):
+        raise AssertionError('Reading a selection must not rerun recommendations')
+    monkeypatch.setattr(client.app.state.engine, 'recommend', no_search)
+    answer = chat_about(client, item, result, 'Второй говорит на английском?')
+    assert answer['context_run_id'] == result['run_id']
+    assert 'Аня Форджер' in answer['message']
+    assert 'языки работы: русский' in answer['message']
+    assert 'Куррапика' not in answer['message']
+    assert answer['request']['draft'] == item['draft']
+    assert answer['request']['revision'] == item['revision']
+    assert answer['result'] is None
+    assert len(client.get(f'/api/selection-requests/{item["id"]}').json()['runs']) == 1
+    comparison = chat_about(client, item, result, 'Сравни первого и третьего')
+    assert 'Куррапика' in comparison['message']
+    assert result['cards'][2]['anon_name'] in comparison['message']
+    assert 'Аня Форджер' not in comparison['message']
+
+
+def test_follow_up_uses_previously_named_candidate(client):
+    item = create(client)
+    result = run(client, item)
+    chat_about(client, item, result, 'Расскажи про второго')
+    answer = chat_about(client, item, result, 'Сколько часов он работает?')
+    assert 'Аня Форджер' in answer['message']
+    assert 'до 6 часов' in answer['message']
+    assert 'Куррапика' not in answer['message']
+
+
+def test_selection_snapshot_is_not_replaced_by_newer_run(client):
+    item = create(client)
+    old = run(client, item)
+    item = client.patch(f'/api/selection-requests/{item["id"]}', json={
+        'expected_revision': item['revision'], 'draft': {**item['draft'], 'event_date': '2026-10-17'},
+    }).json()
+    new = run(client, item)
+    answer = chat_about(client, item, old, 'Расскажи про второго')
+    assert 'Аня Форджер' in answer['message']
+    assert 'Фильтры изменены' in answer['message']
+    assert '2026-10-10' in answer['message']
+    assert answer['context_run_id'] == old['run_id']
+    answer = chat_about(client, item, new, 'Расскажи про второго')
+    assert 'Буллма' in answer['message']
+    assert 'Аня Форджер' not in answer['message']
+    assert 'Фильтры изменены' not in answer['message']
+
+
+def test_stale_selection_can_be_discussed_with_incomplete_draft(client):
+    item = create(client)
+    result = run(client, item)
+    item = client.patch(f'/api/selection-requests/{item["id"]}', json={
+        'expected_revision': 1, 'draft': {**item['draft'], 'budget_kzt': None},
+    }).json()
+    answer = chat_about(client, item, result, 'Сколько стоит второй?')
+    assert 'Аня Форджер' in answer['message']
+    assert '700 000' in answer['message']
+    assert 'Фильтры изменены' in answer['message']
+    assert answer['request']['draft']['budget_kzt'] is None
+
+
+def test_empty_selection_does_not_resurrect_previous_candidates(client):
+    item = create(client)
+    old = run(client, item)
+    chat_about(client, item, old, 'Кто из них лучше?')
+    item = client.patch(f'/api/selection-requests/{item["id"]}', json={
+        'expected_revision': 1, 'draft': {**item['draft'], 'budget_kzt': 10000},
+    }).json()
+    empty = run(client, item)
+    answer = chat_about(client, item, empty, 'Кто из них лучше?')
+    assert 'ни один не проходит' in answer['message']
+    assert 'Куррапика' not in answer['message']
+    assert answer['context_run_id'] == empty['run_id']
+
+
+def test_no_selection_requires_search_even_if_history_exists(client):
+    item = create(client)
+    run(client, item)
+    answer = chat_about(client, item, None, 'Сравни варианты')
+    assert 'Пока нет подборки' in answer['message']
+    assert answer['context_run_id'] is None
+
+
+def test_chat_rejects_selection_from_another_request(client):
+    first = create(client)
+    other = create(client)
+    result = run(client, other)
+    response = client.post('/api/chat/messages', json={
+        'request_id': first['id'], 'expected_revision': first['revision'],
+        'displayed_run_id': result['run_id'], 'message': 'Расскажи про второго',
+    })
+    assert response.status_code == 404
+    client.cookies.clear()
+    third = create(client)
+    response = client.post('/api/chat/messages', json={
+        'request_id': third['id'], 'expected_revision': 1,
+        'displayed_run_id': result['run_id'], 'message': 'Расскажи про второго',
+    })
+    assert response.status_code == 404
+
+
+def test_model_receives_full_selection_and_verified_evidence(client, monkeypatch):
+    import httpx
+    from backend import assistant
+    item = create(client)
+    result = run(client, item)
+    candidate = result['cards'][1]
+    real_client = httpx.Client
+    def transport(request):
+        payload = json.loads(request.content)
+        context = json.loads(payload['messages'][0]['content'].split('Текущий контекст: ', 1)[1])
+        selected = context['selection']
+        assert selected['run_id'] == result['run_id']
+        assert selected['query'] == item['draft']
+        assert selected['is_stale'] is False
+        assert selected['cards'][1]['position'] == 2
+        for field in ('description', 'price_from_kzt', 'languages', 'max_hours', 'explanation', 'evidence', 'synthetic'):
+            assert selected['cards'][1][field] == candidate[field]
+        args = {'candidate_ids': [candidate['id']], 'topic': 'style', 'evidence_quotes': [{'contractor_id': candidate['id'], 'quote': candidate['evidence']['quote']}, {'contractor_id': candidate['id'], 'quote': 'ВЫДУМАННОЕ ПРЕИМУЩЕСТВО'}]}
+        return httpx.Response(200, json={'choices': [{'message': {'tool_calls': [{'function': {'name': 'answer_candidates', 'arguments': json.dumps(args)}}]}}]})
+    monkeypatch.setattr(config, 'API_KEY', 'test-not-real')
+    monkeypatch.setattr(assistant.httpx, 'Client', lambda *args, **kwargs: real_client(transport=httpx.MockTransport(transport), **kwargs))
+    answer = chat_about(client, item, result, 'Какой стиль у второго?')
+    assert answer['mode'] == 'openai'
+    assert candidate['anon_name'] in answer['message']
+    assert candidate['evidence']['quote'] in answer['message']
+    assert 'ВЫДУМАННОЕ' not in answer['message']
+    assert answer['result'] is None
+
+
+def test_model_cannot_answer_for_candidate_outside_selection(client, monkeypatch):
+    from backend import assistant
+    item = create(client)
+    result = run(client, item)
+    monkeypatch.setattr(config, 'API_KEY', 'test-not-real')
+    monkeypatch.setattr(assistant, 'model_plan', lambda *args: ('answer_candidates', {'candidate_ids': ['HK-unknown'], 'topic': 'overview'}))
+    answer = chat_about(client, item, result, 'Расскажи о кандидате')
+    assert 'не входит в эту подборку' in answer['message']
+

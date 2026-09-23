@@ -55,6 +55,7 @@ class ChatInput(BaseModel):
     request_id: str
     expected_revision: int = Field(ge=1)
     message: str = Field(min_length=1, max_length=4000)
+    displayed_run_id: str | None = Field(None, max_length=100)
 
 
 class CompareInput(BaseModel):

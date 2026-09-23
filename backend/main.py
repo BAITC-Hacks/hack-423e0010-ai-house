@@ -147,7 +147,15 @@ def create_app(database_url=None, dataset_path=None, semantic_provider=None):
     def chat(body: ChatInput, request: Request):
         with lock_for(body.request_id):
             item, _ = get_item(request, body.request_id, body.expected_revision)
-            return app.state.assistant.reply(item, request.state.owner, body.message.strip())
+            selected_run = None
+            if body.displayed_run_id:
+                selected_run = app.state.store.get_run(body.displayed_run_id, body.request_id, request.state.owner)
+                if selected_run is None:
+                    raise HTTPException(404, 'Подборка не найдена в этом запросе и сессии')
+            elif 'displayed_run_id' not in body.model_fields_set:
+                previous = app.state.store.runs(body.request_id, request.state.owner, 1)
+                selected_run = previous[0] if previous else None
+            return app.state.assistant.reply(item, request.state.owner, body.message.strip(), selected_run)
 
     dist = config.ROOT / 'frontend' / 'dist'
     if dist.exists():

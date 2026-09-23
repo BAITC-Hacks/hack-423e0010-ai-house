@@ -92,6 +92,13 @@ class Store:
             items = s.scalars(select(RunRecord).where(RunRecord.request_id == request_id, RunRecord.owner == owner).order_by(RunRecord.created_at.desc()).limit(limit)).all()
             return [i.payload for i in items]
 
+    def get_run(self, run_id, request_id, owner):
+        with self.session() as s:
+            run = s.get(RunRecord, run_id)
+            if not run or run.owner != owner or run.request_id != request_id:
+                return None
+            return run.payload
+
     def add_message(self, request_id, role, content):
         with self.session.begin() as s:
             s.add(MessageRecord(request_id=request_id, role=role, content=content))

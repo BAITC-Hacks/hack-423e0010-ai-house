@@ -99,3 +99,31 @@ test('mobile layout has no overflow and assistant opens on request',async({page}
   await expect(page.getByLabel('Сообщение помощнику')).toBeVisible();
   await page.getByRole('button',{name:'Скрыть помощника'}).click();
 });
+
+test('filter results become chat context and questions do not modify filters',async({page})=>{
+  await page.getByRole('button',{name:'Найти совпадения'}).click();
+  await expect(page.getByTestId('contractor-card')).toHaveCount(3);
+  const context=page.getByTestId('chat-selection');
+  await expect(context).toContainText('Вижу вашу подборку');
+  await expect(context).toContainText('Куррапика');
+  await expect(context).toContainText('Аня Форджер');
+  await page.getByLabel('Сообщение помощнику').fill('Второй говорит на английском?');
+  await page.getByRole('button',{name:'Отправить сообщение'}).click();
+  await expect(page.locator('.message.assistant').last()).toContainText('Аня Форджер');
+  await expect(page.locator('.message.assistant').last()).toContainText('языки работы: русский');
+  await expect(page.getByLabel('Язык',{exact:true})).toHaveValue('');
+  await expect(page.locator('.nav-item .count')).toHaveText('1');
+  await page.getByLabel('Дата мероприятия',{exact:true}).fill('2026-10-17');
+  await expect(context).toContainText('Обсуждаем предыдущую подборку');
+  await page.getByRole('button',{name:'Найти совпадения'}).click();
+  await expect(context).toContainText('Буллма');
+  await expect(context).not.toContainText('Аня Форджер');
+  await page.getByLabel('Сообщение помощнику').fill('Расскажи про второго');
+  await page.getByRole('button',{name:'Отправить сообщение'}).click();
+  await expect(page.locator('.message.assistant').last()).toContainText('Буллма');
+  await page.reload();
+  await expect(context).toContainText('Буллма');
+  await page.getByLabel('Сообщение помощнику').fill('Сколько стоит второй?');
+  await page.getByRole('button',{name:'Отправить сообщение'}).click();
+  await expect(page.locator('.message.assistant').last()).toContainText('1 000 000');
+});
