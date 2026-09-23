@@ -8,21 +8,28 @@ test.beforeEach(async({page})=>{
 test('basic selection, evidence, profile, comparison, and persisted history',async({page})=>{
   const errors:string[]=[];
   page.on('pageerror',error=>errors.push(error.message));
+  await expect(page.locator('[aria-current="step"]')).toHaveText('1Расскажите о событии');
   await page.getByRole('button',{name:'Найти совпадения'}).click();
   const cards=page.getByTestId('contractor-card');
   await expect(cards).toHaveCount(3);
+  await expect(page.locator('[aria-current="step"]')).toHaveText('2Изучите совпадения');
   await expect(cards.first()).toContainText('Куррапика');
   await cards.first().getByText('На чём основан выбор').click();
   await expect(cards.first().locator('blockquote')).toBeVisible();
-  await cards.first().getByRole('button',{name:'Куррапика'}).click();
+  const profileAction=cards.first().getByRole('button',{name:'Посмотреть профиль'});
+  await profileAction.focus();
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toContainText('О подрядчике');
   await page.getByRole('button',{name:'Закрыть окно'}).click();
+  await expect(profileAction).toBeFocused();
+  await expect(cards.first().getByRole('checkbox')).not.toBeChecked();
   await cards.nth(0).getByRole('checkbox').check();
   await cards.nth(1).getByRole('checkbox').check();
+  await expect(page.locator('[aria-current="step"]')).toHaveText('3Сравните и выберите');
   await page.locator('.compare-bar').getByRole('button',{name:'Сравнить'}).click();
   await expect(page.getByRole('dialog')).toContainText('Аня Форджер');
   await page.keyboard.press('Escape');
-  await page.screenshot({path:'../data/screenshots/desktop.png',fullPage:true});
+  await page.screenshot({path:'../data/screenshots/desktop.png',fullPage:true,animations:'disabled'});
   await page.reload();
   await expect(page.getByTestId('contractor-card')).toHaveCount(3);
   await page.getByRole('button',{name:/История/}).click();
@@ -94,11 +101,19 @@ test('mobile layout has no overflow and assistant opens on request',async({page}
   await page.getByRole('button',{name:'Найти совпадения'}).click();
   await expect(page.getByTestId('contractor-card')).toHaveCount(3);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
-  await page.screenshot({path:'../data/screenshots/mobile.png',fullPage:true});
+  await page.screenshot({path:'../data/screenshots/mobile.png',fullPage:true,animations:'disabled'});
+  await cardsForMobileProfile(page);
   await page.getByRole('button',{name:'Помощник',exact:true}).click();
   await expect(page.getByLabel('Сообщение помощнику')).toBeVisible();
   await page.getByRole('button',{name:'Скрыть помощника'}).click();
 });
+
+async function cardsForMobileProfile(page: import('@playwright/test').Page) {
+  const card=page.getByTestId('contractor-card').first();
+  await card.getByRole('button',{name:'Посмотреть профиль'}).click();
+  await expect(page.getByRole('dialog')).toContainText('Куррапика');
+  await page.getByRole('button',{name:'Закрыть окно'}).click();
+}
 
 test('filter results become chat context and questions do not modify filters',async({page})=>{
   await page.getByRole('button',{name:'Найти совпадения'}).click();

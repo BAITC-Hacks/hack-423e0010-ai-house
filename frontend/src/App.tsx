@@ -39,7 +39,32 @@ function Provenance({profile}: {profile:Profile}) {
 }
 
 function ContractorCard({card,index,selected,onSelect,onOpen}: {card:Card;index:number;selected:boolean;onSelect:()=>void;onOpen:()=>void}) {
-  return <article className="contractor-card" data-testid="contractor-card"><div className="card-top"><div className={`avatar avatar-${index}`}>{initials(card.anon_name)}<span>{index+1}</span></div><div className="identity"><div className="eyebrow">{card.categories.join(' · ')}</div><button className="name-button" onClick={onOpen}>{card.anon_name}<ExternalLink size={13}/></button><div className="meta"><MapPin size={13}/>{card.city}<span>·</span>{card.max_hours===null?'Без почасового лимита':`до ${card.max_hours} часов`}</div></div><div className="card-price"><small>за мероприятие</small><strong>от {formatMoney(card.price_from_kzt)}</strong></div></div><div className="match-badges">{card.badges.map(b=><span key={b}><Check size={12}/>{b}</span>)}</div><div className="explanation"><Sparkles size={16}/><div><strong>Почему подходит</strong><p>{card.explanation}</p></div></div><details className="evidence"><summary>На чём основан выбор <ChevronDown size={14}/></summary><blockquote>«{card.evidence.quote}»</blockquote><p>Источник: описание профиля {card.id}. {card.evidence.matched_features.length>0?`Совпадения с пожеланиями: ${card.evidence.matched_features.join(', ')}.`:'Проверены условия формы; оценка качества услуг в каталоге отсутствует.'}</p><p>Стартовая цена проходит бюджет. Окончательная стоимость требует уточнения.</p></details><div className="card-bottom"><Provenance profile={card}/><label className="compare-check"><input type="checkbox" checked={selected} onChange={onSelect}/><GitCompareArrows size={14}/>Сравнить</label></div></article>;
+  return <article className="contractor-card" data-testid="contractor-card">
+    <div className="card-top">
+      <div className={`avatar avatar-${index}`}>{initials(card.anon_name)}<span>{index+1}</span></div>
+      <div className="identity">
+        <div className="eyebrow">{card.categories.join(' · ')}</div>
+        <button className="name-button" onClick={onOpen}>{card.anon_name}<ExternalLink size={13}/></button>
+        <div className="meta"><MapPin size={13}/>{card.city}<span>·</span>{card.max_hours===null?'Без почасового лимита':`до ${card.max_hours} часов`}</div>
+      </div>
+      <div className="card-price"><small>за мероприятие</small><strong>от {formatMoney(card.price_from_kzt)}</strong></div>
+    </div>
+    <div className="match-badges">{card.badges.map(b=><span key={b}><Check size={12}/>{b}</span>)}</div>
+    <div className="explanation"><Sparkles size={16}/><div><strong>Почему подходит</strong><p>{card.explanation}</p></div></div>
+    <details className="evidence">
+      <summary><Info size={18}/><span>На чём основан выбор</span><ChevronDown className="evidence-chevron" size={20}/></summary>
+      <blockquote>«{card.evidence.quote}»</blockquote>
+      <p>Источник: описание профиля {card.id}. {card.evidence.matched_features.length>0?`Совпадения с пожеланиями: ${card.evidence.matched_features.join(', ')}.`:'Проверены условия формы; оценка качества услуг в каталоге отсутствует.'}</p>
+      <p>Стартовая цена проходит бюджет. Окончательная стоимость требует уточнения.</p>
+    </details>
+    <div className="card-bottom">
+      <div className="card-actions">
+        <button type="button" className="primary card-primary" onClick={onOpen}>Посмотреть профиль <ArrowRight size={17}/></button>
+        <label className="compare-check"><input type="checkbox" checked={selected} onChange={onSelect}/><GitCompareArrows size={16}/>Сравнить</label>
+      </div>
+      <Provenance profile={card}/>
+    </div>
+  </article>;
 }
 
 export default function App() {
@@ -50,7 +75,7 @@ export default function App() {
   const [runs,setRuns]=useState<Result[]>([]);
   const [messages,setMessages]=useState<Message[]>([]);
   const [chatText,setChatText]=useState('');
-  const [chatOpen,setChatOpen]=useState(()=>window.matchMedia('(min-width: 1051px)').matches);
+  const [chatOpen,setChatOpen]=useState(()=>window.matchMedia('(min-width: 1251px)').matches);
   const [chatMode,setChatMode]=useState('local');
   const [pending,setPending]=useState('');
   const [error,setError]=useState('');
@@ -66,6 +91,7 @@ export default function App() {
   const resultRef=useRef<HTMLDivElement>(null);
   const stale=!!result && JSON.stringify(result.query)!==JSON.stringify(draft);
   const busy=!!pending || booting;
+  const activeStep=selected.length>=2?3:result&&!stale?2:1;
 
   useEffect(()=>{
     let active=true;
@@ -124,7 +150,12 @@ export default function App() {
   return <div className="app-shell">
     <header className="topbar"><a className="brand" href="/" aria-label="Событие — главная"><span className="brand-mark"><Sparkles size={24}/></span>событие<span className="brand-dot">.</span></a><nav aria-label="Основная навигация"><button className={tab==='selection'?'nav-item active':'nav-item'} onClick={()=>setTab('selection')}><Compass size={16}/>Подбор подрядчиков</button><button className={tab==='history'?'nav-item active':'nav-item'} onClick={()=>setTab('history')}><History size={16}/>История<span className="count">{runs.length}</span></button></nav><div className="topbar-end"><button className="help-button" onClick={()=>setShowHelp(true)}><Info size={16}/>Как это работает</button><span className="demo-tag">DEMO 2026</span><span className="user-avatar">Вы</span></div></header>
     <main className="page"><div className="page-intro"><div><div className="breadcrumb">Платформа мероприятий <span>/</span> {tab==='selection'?'Умный подбор':'История подбора'}</div><h1>{tab==='selection'?<>Ваше событие.<br className="mobile-break"/> Ваши люди<span>.</span></>:'История ваших подборок.'}</h1><p>Меньше поисков. Больше совпадений. До трёх вариантов, которые подходят именно вам.</p></div><div className="intro-note"><span className="stacked-avatars"><i>АК</i><i>МР</i><i><Sparkles size={16}/></i></span><span><strong>{options?.total||66} профилей</strong><small>собраны в одном месте</small></span></div></div>
-      <div className="steps"><span className="step current"><b>1</b>Расскажите о событии</span><i/><span className={`step ${result&&!stale?'current':''}`}><b>2</b>Изучите совпадения</span><i/><span className={`step ${selected.length>=2?'current':''}`}><b>3</b>Сравните и выберите</span><span className="steps-note"><ShieldCheck size={14}/>Только проверяемые условия</span></div>
+      <div className="steps" aria-label="Этапы подбора">
+        <span className={`step ${activeStep===1?'current':''}`} aria-current={activeStep===1?'step':undefined}><b>1</b>Расскажите о событии</span><i/>
+        <span className={`step ${activeStep===2?'current':''}`} aria-current={activeStep===2?'step':undefined}><b>2</b>Изучите совпадения</span><i/>
+        <span className={`step ${activeStep===3?'current':''}`} aria-current={activeStep===3?'step':undefined}><b>3</b>Сравните и выберите</span>
+        <span className="steps-note"><ShieldCheck size={14}/>Только проверяемые условия</span>
+      </div>
       {error&&<div className="error-banner" role="alert"><Info size={18}/><span>{error}</span>{!saved?<button onClick={()=>location.reload()}>Повторить</button>:null}<button className="icon-button" aria-label="Скрыть ошибку" onClick={()=>setError('')}><X size={16}/></button></div>}
       <div className={`workspace ${chatOpen?'':'chat-hidden'}`}>
         <aside className="filters"><div className="panel-heading"><span><SlidersHorizontal size={17}/>Ваше мероприятие</span><button className="icon-button" disabled={busy} onClick={()=>{setDraft(DEFAULT);setSelected([]);setAlternatives([]);setAlternativesLoaded(false);}} aria-label="Восстановить параметры примера" title="Восстановить пример"><RotateCcw size={15}/></button></div><form onSubmit={formSubmit}><fieldset disabled={busy}><div className="form-body"><label>Город <span>*</span><div className="input-wrap"><MapPin size={16}/><select aria-label="Город" required value={draft.city||''} onChange={e=>update('city',e.target.value||null)}><option value="">Выберите город</option>{options?.cities.map(c=><option key={c}>{c}</option>)}</select></div></label><label>Дата мероприятия <span>*</span><input aria-label="Дата мероприятия" type="date" required min={options?.calendar_start||'2026-09-23'} max={options?.calendar_end||'2026-12-31'} value={draft.event_date||''} onChange={e=>update('event_date',e.target.value||null)}/><small>Календарь: 23 сен — 31 дек 2026</small></label><label>Тип мероприятия <span>*</span><select aria-label="Тип мероприятия" required value={draft.event_format||''} onChange={e=>update('event_format',e.target.value||null)}><option value="">Выберите формат</option>{options?.event_formats.map(c=><option key={c} value={c}>{c[0].toUpperCase()+c.slice(1)}</option>)}</select></label><label>Кого ищем? <span>*</span><select aria-label="Категория подрядчика" required value={draft.category||''} onChange={e=>update('category',e.target.value||null)}><option value="">Выберите категорию</option>{options?.categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Бюджет на подрядчика <span>*</span><div className="money-input"><input aria-label="Бюджет на подрядчика" type="number" min="1" max="1000000000" step="1" required value={draft.budget_kzt??''} onChange={e=>update('budget_kzt',e.target.value?Number(e.target.value):null)}/><span>₸</span></div><small>Сравниваем со стартовой ценой</small></label><div className="additional-title">Детали <span>необязательно</span></div><div className="two-fields"><label>Длительность<div className="money-input"><input aria-label="Длительность" type="number" min="0.5" max="100" step="0.5" placeholder="Любая" value={draft.duration_hours??''} onChange={e=>update('duration_hours',e.target.value?Number(e.target.value):null)}/><span>ч</span></div></label><label>Язык<select aria-label="Язык" value={draft.language||''} onChange={e=>update('language',e.target.value||null)}><option value="">Любой</option>{options?.languages.map(c=><option key={c}>{c}</option>)}</select></label></div><label>Что для вас важно?<textarea aria-label="Пожелания" rows={3} maxLength={2000} placeholder="Например, спокойная подача и интеллигентный юмор…" value={draft.preferences} onChange={e=>update('preferences',e.target.value)}/></label><button type="button" className="preference-chip" onClick={()=>update('preferences','Спокойная подача, интеллигентный юмор')}><Plus size={12}/>Спокойная атмосфера</button></div><div className="form-footer"><button className="primary search-button" type="submit"><Sparkles size={17}/>{pending==='search'?'Подбираем…':'Найти совпадения'}<ArrowRight size={17}/></button><p>До 3 вариантов. С объяснением каждого.</p></div></fieldset></form></aside>
