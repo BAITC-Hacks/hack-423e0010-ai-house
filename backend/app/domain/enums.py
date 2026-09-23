@@ -1,0 +1,15 @@
+from enum import StrEnum
+
+
+class RejectionReason(StrEnum):
+    BUSY = "BUSY"
+    OVER_BUDGET = "OVER_BUDGET"
+    FORMAT_UNSUPPORTED = "FORMAT_UNSUPPORTED"
+    LANGUAGE_UNSUPPORTED = "LANGUAGE_UNSUPPORTED"
+    DURATION_EXCEEDED = "DURATION_EXCEEDED"
+
+
+class RecommendationStatus(StrEnum):
+    MATCHED = "MATCHED"
+    CATEGORY_ABSENT = "CATEGORY_ABSENT"
+    NO_MATCH = "NO_MATCH"
