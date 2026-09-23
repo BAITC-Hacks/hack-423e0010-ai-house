@@ -5,6 +5,12 @@ from app.config import MAX_RESULTS
 from app.domain.enums import RecommendationStatus, RejectionReason
 from app.domain.models import Contractor, RejectedCandidate
 from app.repositories.catalog import CatalogRepository
+from app.services.semantic import ScoredContractor, SemanticRanker
+
+# Cosine similarities are compared at this precision for tie-breaking so that
+# floating-point noise never produces a non-deterministic order; two scores
+# within 1e-6 of each other are treated as equal and broken by price/id.
+SIMILARITY_TIE_BREAK_DIGITS = 6
 
 
 @dataclass(frozen=True)
@@ -16,12 +22,13 @@ class RecommendQuery:
     budget_kzt: int
     duration_hours: int | None = None
     language: str | None = None
+    preferences: str | None = None
 
 
 @dataclass(frozen=True)
 class RecommendResult:
     status: RecommendationStatus
-    results: list[Contractor]
+    results: list[ScoredContractor]
     rejected: list[RejectedCandidate]
 
 
@@ -50,11 +57,32 @@ def _rejection_reasons(contractor: Contractor, query: RecommendQuery) -> tuple[s
     return tuple(reasons)
 
 
-def _rank(contractors: list[Contractor]) -> list[Contractor]:
+def _has_preferences(query: RecommendQuery) -> bool:
+    return query.preferences is not None and query.preferences.strip() != ""
+
+
+def _rank_by_price(contractors: list[Contractor]) -> list[Contractor]:
     return sorted(contractors, key=lambda c: (c.price_from_kzt, c.id))
 
 
-def recommend(query: RecommendQuery, repo: CatalogRepository) -> RecommendResult:
+def _rank_by_semantics(
+    contractors: list[Contractor], scores: dict[str, float]
+) -> list[Contractor]:
+    return sorted(
+        contractors,
+        key=lambda c: (
+            -round(scores[c.id], SIMILARITY_TIE_BREAK_DIGITS),
+            c.price_from_kzt,
+            c.id,
+        ),
+    )
+
+
+def recommend(
+    query: RecommendQuery,
+    repo: CatalogRepository,
+    ranker: SemanticRanker | None = None,
+) -> RecommendResult:
     candidates = repo.find_by_city_and_category(query.city, query.category)
 
     if not candidates:
@@ -76,7 +104,20 @@ def recommend(query: RecommendQuery, repo: CatalogRepository) -> RecommendResult
             status=RecommendationStatus.NO_MATCH, results=[], rejected=rejected
         )
 
-    ranked = _rank(eligible)[:MAX_RESULTS]
+    if _has_preferences(query) and ranker is not None:
+        scores = ranker.score(query.preferences, eligible)
+        ordered = _rank_by_semantics(eligible, scores)
+        scored = [
+            ScoredContractor(contractor=c, semantic_score=scores[c.id])
+            for c in ordered[:MAX_RESULTS]
+        ]
+    else:
+        ordered = _rank_by_price(eligible)
+        scored = [
+            ScoredContractor(contractor=c, semantic_score=None)
+            for c in ordered[:MAX_RESULTS]
+        ]
+
     return RecommendResult(
-        status=RecommendationStatus.MATCHED, results=ranked, rejected=rejected
+        status=RecommendationStatus.MATCHED, results=scored, rejected=rejected
     )

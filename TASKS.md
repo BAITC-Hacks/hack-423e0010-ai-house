@@ -17,12 +17,15 @@
 - [x] Run full suite, run one real request through `TestClient`
 - [x] `PROGRESS.md` updated
 
-## Phase 2 — semantic ranking (future, not started)
+## Phase 2 — semantic ranking (this session)
 
-- [ ] Precompute description embeddings, in-memory similarity (per architecture doc — no vector DB for this dataset size)
-- [ ] Extract verifiable "features" from descriptions with supporting text spans
-- [ ] Replace primary ranking criterion with preference match, keep price/id as tie-break
-- [ ] Explanation generation from verified facts only (template-based; LLM optional and must degrade gracefully)
+- [x] Precompute description embeddings, in-memory similarity (per architecture doc — no vector DB for this dataset size)
+- [x] Replace primary ranking criterion with preference match (semantic similarity), keep price/id as tie-break
+- [x] `intfloat/multilingual-e5-base` via `sentence-transformers`, loaded once (app lifespan), profile embeddings precomputed once per catalog
+- [x] `semantic_score` surfaced on each result card only when `preferences` was used
+- [x] Tests: trigger/no-trigger, eligible-only scoring, busy/over-budget contractors never returned despite strong semantic match, determinism, max 3, structured-field override, no-recompute-per-request
+- [ ] Extract verifiable "features" from descriptions with supporting text spans (deferred — not needed for ranking, would support future explanation generation)
+- [ ] Explanation generation from verified facts only (template-based; LLM optional and must degrade gracefully) — deferred to a later phase
 
 ## Phase 3 — chat assistant (future, not started)
 

@@ -28,6 +28,7 @@ class ContractorCard(BaseModel):
     synthetic: bool
     city_imputed: bool
     price_imputed: bool
+    semantic_score: float | None = None
 
 
 class RejectedCandidate(BaseModel):

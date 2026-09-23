@@ -31,6 +31,51 @@ Deterministic recommendation core is complete per `docs/spec.md` / `TASKS.md`.
 - `synthetic` / `city_imputed` / `price_imputed` survive to the API response — `test_recommend_matched_and_metadata_survives`
 - invalid date outside calendar coverage handled explicitly (422) — `test_invalid_date_outside_calendar_window_is_rejected`
 
+## Phase 2 — implemented and verified (2026-09-23)
+
+Deterministic semantic ranking is complete per `docs/spec.md` §6/§6.1 and `TASKS.md`. The
+hard-filtering engine remains the sole source of eligibility; semantic ranking only ever
+reorders the already-eligible pool.
+
+**Implemented:**
+- `backend/app/services/semantic.py` — `SemanticRanker` (precomputes catalog profile
+  embeddings once at construction, scores eligible candidates against a `preferences`
+  query per request), `build_semantic_document` (canonical per-contractor text), E5
+  `query:`/`passage:` prefix constants, `ScoredContractor`.
+- `backend/app/services/recommendation.py` — `recommend()` now takes an optional
+  `SemanticRanker`; ranks by semantic similarity desc / price asc / id asc when
+  `preferences` is non-empty, else keeps Phase 1 price/id ranking. Results are
+  `ScoredContractor` (contractor + `semantic_score: float | None`).
+- `backend/app/api/deps.py` — `get_semantic_ranker()`, `@lru_cache` singleton.
+- `backend/app/main.py` — FastAPI `lifespan` warms the ranker (model load + catalog
+  embeddings) once at startup instead of on the first request.
+- `backend/app/schemas/recommend.py` — `ContractorCard.semantic_score: float | None`.
+- `backend/pyproject.toml` — added `sentence-transformers` dependency.
+- 17 new tests (`backend/tests/test_semantic_ranking.py`, plus additions to
+  `test_api.py`): fake-encoder tests for pure ranking logic/determinism/call-counting,
+  plus real-model tests (session-scoped fixtures) for genuine semantic behavior and
+  end-to-end API checks.
+
+**Verified:**
+- `pytest` — 37/37 passing (20 original + 17 new).
+- Real requests, same hard filters (Алматы/Ведущий/корпоратив/2026-10-10/budget 700k KZT,
+  eligible pool = {HK-88430, HK-29829}), different `preferences`:
+  - `"спокойная деловая интеллигентная подача, корпоративный стиль"` → `HK-88430` first
+    (0.8109 vs 0.8029)
+  - `"яркое шоу с танцами и развлечениями"` → `HK-29829` first (0.8172 vs 0.7739)
+  - Same eligible IDs in both cases, order flips — semantic layer never touches eligibility.
+- Repeated identical requests (same preferences) return identical IDs and identical
+  `semantic_score` values.
+- Latency after warm-up (model load + catalog embedding, ~14s one-time cost): ~11.5 ms per
+  `recommend()` call (20-call average), dominated by encoding the single query string.
+
+**Known limitations:**
+- First request after process start pays the one-time model-load/embed cost unless the
+  `lifespan` warm-up has already run (it has, for `uvicorn`; not for a bare `TestClient()`
+  used outside `with`, where the `@lru_cache` dependency still loads lazily on first call).
+- `HF_HUB_OFFLINE` is not set, so the app checks Hugging Face Hub for the pinned model on
+  first load if not already cached; no network access needed once cached locally.
+
 ## Not started
 
-Phases 2–4 in `TASKS.md` (semantic ranking, chat assistant, PostgreSQL/persistence). Not touched this session.
+Phases 3–4 in `TASKS.md` (chat assistant, PostgreSQL/persistence). Not touched this session.

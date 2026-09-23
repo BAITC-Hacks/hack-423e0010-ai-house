@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import get_catalog_repository
-from app.domain.models import Contractor
+from app.api.deps import get_catalog_repository, get_semantic_ranker
 from app.repositories.catalog import CatalogRepository
 from app.schemas.recommend import (
     ContractorCard,
@@ -10,6 +9,7 @@ from app.schemas.recommend import (
     RejectedCandidate,
 )
 from app.services.recommendation import RecommendQuery, recommend
+from app.services.semantic import ScoredContractor, SemanticRanker
 
 router = APIRouter()
 
@@ -19,7 +19,8 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _to_card(contractor: Contractor) -> ContractorCard:
+def _to_card(scored: ScoredContractor) -> ContractorCard:
+    contractor = scored.contractor
     return ContractorCard(
         id=contractor.id,
         name=contractor.name,
@@ -32,6 +33,7 @@ def _to_card(contractor: Contractor) -> ContractorCard:
         synthetic=contractor.synthetic,
         city_imputed=contractor.city_imputed,
         price_imputed=contractor.price_imputed,
+        semantic_score=scored.semantic_score,
     )
 
 
@@ -39,6 +41,7 @@ def _to_card(contractor: Contractor) -> ContractorCard:
 def recommend_contractors(
     request: RecommendRequest,
     repo: CatalogRepository = Depends(get_catalog_repository),
+    ranker: SemanticRanker = Depends(get_semantic_ranker),
 ) -> RecommendResponse:
     if not repo.is_within_calendar_window(request.event_date):
         raise HTTPException(
@@ -58,8 +61,9 @@ def recommend_contractors(
         budget_kzt=request.budget_kzt,
         duration_hours=request.duration_hours,
         language=request.language,
+        preferences=request.preferences,
     )
-    result = recommend(query, repo)
+    result = recommend(query, repo, ranker)
 
     return RecommendResponse(
         status=result.status,

@@ -19,7 +19,9 @@ Required:
 Optional:
 - `duration_hours` (int, > 0)
 - `language` (str)
-- `preferences` (free text) — **stored/accepted but not used for filtering or ranking in Phase 1** (semantic ranking is a later phase; free text must never affect eligibility).
+- `preferences` (free text) — when non-empty (after `.strip()`), used for semantic ranking
+  of the already-eligible pool (see §6.1). Never affects eligibility — hard filtering
+  (§4) runs first and is identical with or without `preferences`.
 
 ## 3. Dataset shape (as observed in the CSV, 66 rows)
 
@@ -73,28 +75,74 @@ Validation errors (bad input shape, e.g. missing required field, non-existent ca
 
 If `request.event_date` falls outside the dataset's known calendar window (min/max date present anywhere in `busy_dates` across the catalog), the API rejects the request explicitly as a validation error (HTTP 422) rather than silently treating the contractor as available. This is a deliberate Phase 1 limitation: availability is only known within the covered window.
 
-## 6. Ranking (Phase 1 only — temporary)
+## 6. Ranking
 
-Eligible candidates are ordered by:
+Hard filtering (§4) always runs first and is unaffected by `preferences`. Ranking of the
+resulting eligible pool then depends on whether `preferences` was supplied:
+
+**No `preferences`** (missing, `null`, empty, or whitespace-only after `.strip()`):
 1. `price_from_kzt` ascending
 2. `id` ascending (stable tie-break)
 
-Return at most 3. No semantic/preference ranking yet — `preferences` free text is accepted by the API but not used to rank or filter in this phase.
+**Non-empty `preferences`** (Phase 2 — semantic ranking):
+1. semantic similarity to `preferences`, descending
+2. `price_from_kzt` ascending (tie-break)
+3. `id` ascending (final stable tie-break)
+
+Return at most 3 in both cases. Semantic ranking only ever reorders the eligible pool
+computed by §4 — it can never make an ineligible contractor eligible, and never overrides
+a hard rejection.
+
+### 6.1 Semantic ranking (Phase 2)
+
+- **Model**: `intfloat/multilingual-e5-base`, loaded via `sentence-transformers`, once per
+  process (`app/api/deps.py:get_semantic_ranker`, `@lru_cache`, warmed at app startup via
+  the FastAPI `lifespan` hook in `app/main.py`). Never reloaded per request.
+- **Profile embeddings**: precomputed once for the whole catalog (66 contractors) when the
+  ranker is constructed (`app/services/semantic.py:SemanticRanker.__init__`). Never
+  recomputed per request — only the `preferences` query text is encoded per request.
+- **Canonical semantic document** per contractor (`build_semantic_document`):
+  ```
+  <original full CSV description>. Категории: <sorted, comma-joined categories>. Форматы мероприятий: <sorted, comma-joined event_formats>.
+  ```
+  Category/format context is included for semantic disambiguation only — it never
+  overrides structured-field filtering, which already happened in §4.
+- **E5 retrieval convention**: `preferences` is encoded with the `"query: "` prefix;
+  contractor documents are encoded with the `"passage: "` prefix (`QUERY_PREFIX` /
+  `PASSAGE_PREFIX` in `app/services/semantic.py`, the single place these prefixes are
+  applied). Both are L2-normalized so cosine similarity is a plain dot product, computed
+  in-memory (no vector database — 66 profiles fits comfortably as a small matrix).
+- **`semantic_score`**: a cosine similarity, not a probability and not a quality rating
+  — never presented as a percentage. It is `null` on every returned contractor when
+  `preferences` was absent/empty/whitespace-only, and a float otherwise.
+- **Determinism / tie-break rule**: cosine similarities are rounded to 6 decimal places
+  before being used as a sort key (`SIMILARITY_TIE_BREAK_DIGITS` in
+  `app/services/recommendation.py`); scores within `1e-6` of each other are treated as
+  equal and broken by `price_from_kzt` then `id`. The reported `semantic_score` itself is
+  the unrounded value. The same request against the same dataset/model/profile vectors
+  always produces the same order — no randomness, no LLM involved.
 
 ## 7. API surface (Phase 1)
 
 - `GET /health` — liveness check.
 - `POST /api/v1/recommend` — takes the request object from §2, returns:
   - `status`: `MATCHED` | `CATEGORY_ABSENT` | `NO_MATCH`
-  - `results`: up to 3 contractor cards (id, name, category, city, price_from_kzt, event_formats, languages, max_hours, `synthetic`, `city_imputed`, `price_imputed`)
+  - `results`: up to 3 contractor cards (id, name, category, city, price_from_kzt, event_formats, languages, max_hours, `synthetic`, `city_imputed`, `price_imputed`, `semantic_score`)
   - `rejected`: list of `{contractor_id, reasons: [...]}` for candidates that were in-scope (right city/category) but excluded — omitted/empty when status is `CATEGORY_ABSENT`
+
+No second semantic-search endpoint was added — `preferences` stays part of the existing
+`RecommendRequest` schema and the same engine/endpoint handles both ranking modes.
 
 ## 8. Out of scope for this phase
 
-PostgreSQL, embeddings, LLM/chat integration, semantic ranking, explanation generation from free text, alternative-suggestion computation, multi-category "event project" requests. The in-memory repository loaded from CSV stands in for persistence.
+PostgreSQL, LLM/chat integration, explanation generation from free text, alternative-suggestion
+computation, multi-category "event project" requests. The in-memory repository loaded from
+CSV stands in for persistence. (Semantic ranking is now in scope — see §6.1 — but the LLM
+chat layer that will eventually *consume* the engine's output is not.)
 
 ## 9. Ambiguities found in source material (resolved for Phase 1)
 
 - The architecture doc's proposed API surface (`/selection-requests`, `/chat/messages`, etc.) describes the eventual multi-endpoint, stateful-request architecture. The task brief for this phase explicitly specifies `POST /api/v1/recommend` as a single stateless endpoint. Phase 1 implements the brief's simpler contract; the richer request-versioning API is deferred (see `TASKS.md`).
 - The dataset has one contractor in city `Зарубежье` (lit. "abroad") — treated like any other city value, no special-casing.
-- `preferences` free text is part of the request schema (per the brief and docx example payload) but is inert in Phase 1 — accepted and echoed nowhere, used nowhere, documented here so it isn't mistaken for a bug.
+- `preferences` free text was inert in Phase 1 (accepted, unused). Phase 2 makes it drive
+  semantic ranking of the eligible pool only — see §6.1. It still never affects eligibility.

@@ -31,7 +31,7 @@ def test_busy_contractor_never_returned():
 
     result = recommend(BASE_QUERY, repo)
 
-    ids = [c.id for c in result.results]
+    ids = [c.contractor.id for c in result.results]
     assert "B1" not in ids
     assert result.status == RecommendationStatus.MATCHED
     rejected = {r.contractor.id: r.reasons for r in result.rejected}
@@ -45,7 +45,7 @@ def test_over_budget_contractor_never_returned():
 
     result = recommend(BASE_QUERY, repo)
 
-    ids = [c.id for c in result.results]
+    ids = [c.contractor.id for c in result.results]
     assert "C2" not in ids
     rejected = {r.contractor.id: r.reasons for r in result.rejected}
     assert RejectionReason.OVER_BUDGET in rejected["C2"]
@@ -80,7 +80,7 @@ def test_language_ignored_when_not_specified():
     result = recommend(query_with(language=None), repo)
 
     assert result.status == RecommendationStatus.MATCHED
-    assert [c.id for c in result.results] == ["E2"]
+    assert [c.contractor.id for c in result.results] == ["E2"]
 
 
 def test_duration_filtering_excludes_contractor_with_lower_max_hours():
@@ -101,7 +101,7 @@ def test_duration_within_max_hours_is_eligible():
     result = recommend(query_with(duration_hours=6), repo)
 
     assert result.status == RecommendationStatus.MATCHED
-    assert [c.id for c in result.results] == ["F2"]
+    assert [c.contractor.id for c in result.results] == ["F2"]
 
 
 def test_null_max_hours_is_not_applicable_and_never_excludes():
@@ -111,7 +111,7 @@ def test_null_max_hours_is_not_applicable_and_never_excludes():
     result = recommend(query_with(duration_hours=6), repo)
 
     assert result.status == RecommendationStatus.MATCHED
-    assert [c.id for c in result.results] == ["G1"]
+    assert [c.contractor.id for c in result.results] == ["G1"]
     assert result.rejected == []
 
 
@@ -122,7 +122,7 @@ def test_null_max_hours_does_not_get_treated_as_zero():
 
     result = recommend(query_with(duration_hours=1), repo)
 
-    assert "G2" in [c.id for c in result.results]
+    assert "G2" in [c.contractor.id for c in result.results]
 
 
 def test_maximum_result_size_is_three():
@@ -145,8 +145,8 @@ def test_same_request_produces_same_ids_in_same_order():
     ]
     repo = CatalogRepository(contractors)
 
-    first = [c.id for c in recommend(BASE_QUERY, repo).results]
-    second = [c.id for c in recommend(BASE_QUERY, repo).results]
+    first = [c.contractor.id for c in recommend(BASE_QUERY, repo).results]
+    second = [c.contractor.id for c in recommend(BASE_QUERY, repo).results]
 
     assert first == second
     # price asc (I2/I3=150k, I1=200k, I4=300k), then id asc tie-break for I2/I3;
@@ -164,8 +164,8 @@ def test_changing_only_date_can_change_results_due_to_availability():
     busy_on_requested_date = recommend(BASE_QUERY, repo)
     free_on_other_date = recommend(query_with(event_date=other_date), repo)
 
-    assert "J1" not in [c.id for c in busy_on_requested_date.results]
-    assert "J1" in [c.id for c in free_on_other_date.results]
+    assert "J1" not in [c.contractor.id for c in busy_on_requested_date.results]
+    assert "J1" in [c.contractor.id for c in free_on_other_date.results]
 
 
 def test_category_absent_vs_no_match_are_distinguishable():
