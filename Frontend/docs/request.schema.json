@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "city": {
+      "type": "string",
+      "enum": ["Алматы", "Астана", "Зарубежье"]
+    },
+    "event_date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+    },
+    "event_format": {
+      "type": "string",
+      "enum": ["корпоратив", "свадьба", "той", "конференция", "юбилей", "день рождения"]
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "Ведущий",
+        "Фотограф",
+        "Видеограф",
+        "Банкетный зал",
+        "Загородная площадка",
+        "Ресторан",
+        "Отель",
+        "Флорист",
+        "Декоратор",
+        "Ведущий церемонии",
+        "Инструменталист",
+        "Лайв-бэнд",
+        "Национальный ансамбль",
+        "Танцевальный коллектив",
+        "Шоу-программа",
+        "Фото и видеобудки",
+        "Подарки и сувениры"
+      ]
+    },
+    "budget_kzt": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 1000000000
+    },
+    "duration_hours": {
+      "anyOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 24
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "language": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": ["русский", "казахский", "английский"]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "preferences": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "city",
+    "event_date",
+    "event_format",
+    "category",
+    "budget_kzt",
+    "duration_hours",
+    "language",
+    "preferences"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,448 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["MATCHED", "CATEGORY_ABSENT", "NO_MATCH"]
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string",
+          "enum": ["Алматы", "Астана", "Зарубежье"]
+        },
+        "event_date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "event_format": {
+          "type": "string",
+          "enum": ["корпоратив", "свадьба", "той", "конференция", "юбилей", "день рождения"]
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Ведущий",
+            "Фотограф",
+            "Видеограф",
+            "Банкетный зал",
+            "Загородная площадка",
+            "Ресторан",
+            "Отель",
+            "Флорист",
+            "Декоратор",
+            "Ведущий церемонии",
+            "Инструменталист",
+            "Лайв-бэнд",
+            "Национальный ансамбль",
+            "Танцевальный коллектив",
+            "Шоу-программа",
+            "Фото и видеобудки",
+            "Подарки и сувениры"
+          ]
+        },
+        "budget_kzt": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000
+        },
+        "duration_hours": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 24
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["русский", "казахский", "английский"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preferences": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "city",
+        "event_date",
+        "event_format",
+        "category",
+        "budget_kzt",
+        "duration_hours",
+        "language",
+        "preferences"
+      ],
+      "additionalProperties": false
+    },
+    "catalog_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "eligible_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "recommendations": {
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "contractor": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "Ведущий",
+                  "Фотограф",
+                  "Видеограф",
+                  "Банкетный зал",
+                  "Загородная площадка",
+                  "Ресторан",
+                  "Отель",
+                  "Флорист",
+                  "Декоратор",
+                  "Ведущий церемонии",
+                  "Инструменталист",
+                  "Лайв-бэнд",
+                  "Национальный ансамбль",
+                  "Танцевальный коллектив",
+                  "Шоу-программа",
+                  "Фото и видеобудки",
+                  "Подарки и сувениры"
+                ]
+              },
+              "categories": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Ведущий",
+                    "Фотограф",
+                    "Видеограф",
+                    "Банкетный зал",
+                    "Загородная площадка",
+                    "Ресторан",
+                    "Отель",
+                    "Флорист",
+                    "Декоратор",
+                    "Ведущий церемонии",
+                    "Инструменталист",
+                    "Лайв-бэнд",
+                    "Национальный ансамбль",
+                    "Танцевальный коллектив",
+                    "Шоу-программа",
+                    "Фото и видеобудки",
+                    "Подарки и сувениры"
+                  ]
+                }
+              },
+              "city": {
+                "type": "string",
+                "enum": ["Алматы", "Астана", "Зарубежье"]
+              },
+              "price_from_kzt": {
+                "type": "number",
+                "minimum": 0
+              },
+              "event_formats": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["корпоратив", "свадьба", "той", "конференция", "юбилей", "день рождения"]
+                }
+              },
+              "languages": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["русский", "казахский", "английский"]
+                }
+              },
+              "max_hours": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "specialty": {
+                "type": "string",
+                "minLength": 1
+              },
+              "features": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "quote": {
+                      "type": "string"
+                    },
+                    "keywords": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["label", "quote", "keywords"],
+                  "additionalProperties": false
+                }
+              },
+              "origin": {
+                "type": "string",
+                "enum": ["demo", "catalog", "synthetic"]
+              },
+              "price_is_estimated": {
+                "type": "boolean"
+              },
+              "city_is_estimated": {
+                "type": "boolean"
+              },
+              "artwork": {
+                "type": "string",
+                "enum": ["sage", "clay", "blue", "rose", "sand", "forest"]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "category",
+              "categories",
+              "city",
+              "price_from_kzt",
+              "event_formats",
+              "languages",
+              "max_hours",
+              "description",
+              "specialty",
+              "features",
+              "origin",
+              "price_is_estimated",
+              "city_is_estimated",
+              "artwork"
+            ],
+            "additionalProperties": false
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "available_on": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "matched_preferences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": ["label", "value", "source"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "contractor",
+          "explanation",
+          "available_on",
+          "matched_preferences",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "BUSY",
+              "FORMAT_UNSUPPORTED",
+              "OVER_BUDGET",
+              "LANGUAGE_UNSUPPORTED",
+              "DURATION_EXCEEDED"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["code", "count"],
+        "additionalProperties": false
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "patch": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "enum": ["Алматы", "Астана", "Зарубежье"]
+              },
+              "event_date": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              "event_format": {
+                "type": "string",
+                "enum": ["корпоратив", "свадьба", "той", "конференция", "юбилей", "день рождения"]
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "Ведущий",
+                  "Фотограф",
+                  "Видеограф",
+                  "Банкетный зал",
+                  "Загородная площадка",
+                  "Ресторан",
+                  "Отель",
+                  "Флорист",
+                  "Декоратор",
+                  "Ведущий церемонии",
+                  "Инструменталист",
+                  "Лайв-бэнд",
+                  "Национальный ансамбль",
+                  "Танцевальный коллектив",
+                  "Шоу-программа",
+                  "Фото и видеобудки",
+                  "Подарки и сувениры"
+                ]
+              },
+              "budget_kzt": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000
+              },
+              "duration_hours": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 24
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "language": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["русский", "казахский", "английский"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "preferences": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "additionalProperties": false
+          },
+          "match_count": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["label", "patch", "match_count"],
+        "additionalProperties": false
+      }
+    },
+    "catalog_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ranking_version": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "status",
+    "request",
+    "catalog_count",
+    "eligible_count",
+    "recommendations",
+    "exclusions",
+    "alternatives",
+    "catalog_version",
+    "ranking_version"
+  ],
+  "additionalProperties": false
+}
