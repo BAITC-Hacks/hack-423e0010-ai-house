@@ -13,3 +13,10 @@ class RecommendationStatus(StrEnum):
     MATCHED = "MATCHED"
     CATEGORY_ABSENT = "CATEGORY_ABSENT"
     NO_MATCH = "NO_MATCH"
+
+
+class ChatAction(StrEnum):
+    SEARCH = "SEARCH"
+    UPDATE_SEARCH = "UPDATE_SEARCH"
+    CLARIFY = "CLARIFY"
+    ANSWER = "ANSWER"

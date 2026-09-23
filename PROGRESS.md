@@ -150,7 +150,104 @@ description excerpt.
 - Short, generic contractor descriptions yield the same single evidence segment
   regardless of query — there's nothing more specific in the profile to select.
 
+## Phase 4 — chat assistant + minimal demo UI — implemented and verified (2026-09-23)
+
+`POST /api/v1/chat` and a static browser UI, per the hackathon-final-stage brief and
+`TASKS.md`. The recommendation engine (`app/services/recommendation.py`) is unchanged;
+the chat layer only translates free text into a structured patch and calls the same
+engine `/api/v1/recommend` already used.
+
+**Implemented:**
+- `backend/app/services/llm_client.py` — `LLMIntent` (`action`/`patch`/`message`),
+  `LLMParseError`/`LLMUnavailableError`, `build_system_prompt` (injects the real catalog's
+  cities/categories/event formats/languages so the LLM never invents an unsupported
+  value), `openai_complete_factory` — one `chat.completions.create` call via the `openai`
+  SDK against an OpenAI-compatible endpoint (`LLM_BASE_URL`), JSON-only response parsed
+  and validated, no tool-calling loop, no agent framework.
+- `backend/app/services/chat.py` — `run_chat` (framework-independent, like
+  `recommendation.py`): merges the LLM's patch onto `current_search`, drops any
+  unparsable/unknown field rather than failing, checks the 5 required fields
+  (city/event_date/event_format/category/budget_kzt), returns `CLARIFY` with a concise
+  Russian question when any are missing (never guesses them), checks the calendar window
+  before calling the engine, and otherwise calls `app.services.recommendation.recommend` +
+  the shared `build_recommend_response` — identical code path to `/api/v1/recommend`.
+  No LLM configured, or the LLM call raising `LLMError`, both degrade to a plain `ANSWER`
+  message (current search preserved, `recommendation: null`) — never a crash, never a
+  fabricated `NO_MATCH`.
+- `backend/app/services/response_builder.py` — `_to_card`/`build_recommend_response`
+  extracted from `api/routes.py` so `/api/v1/recommend` and `/api/v1/chat` build the exact
+  same `RecommendResponse` from a `RecommendResult`; `/api/v1/recommend`'s behavior is
+  byte-for-byte unchanged (same 73 pre-existing tests pass unmodified).
+- `backend/app/schemas/chat.py` — `SearchState` (all fields optional), `ChatRequest`,
+  `ChatResponse`. `backend/app/schemas/recommend.py` — `CatalogOptions`.
+- `backend/app/domain/enums.py` — `ChatAction` (`SEARCH`/`UPDATE_SEARCH`/`CLARIFY`/`ANSWER`).
+- `backend/app/api/deps.py` — `get_llm_complete_fn()` (`@lru_cache`; returns `None` when
+  `LLM_API_KEY` is unset — dependency-injectable/overridable in tests), `catalog_options()`.
+- `backend/app/api/routes.py` — `POST /api/v1/chat`, `GET /api/v1/catalog-options`.
+- `backend/app/config.py` — `LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL`
+  (`.env.example`, provider-agnostic OpenAI-compatible names); `load_dotenv()` so
+  `backend/.env` is picked up automatically by `uvicorn app.main:app` with no extra flags
+  (an env var already set in the shell still wins). `REQUIRED_SEARCH_FIELDS`.
+- `backend/app/static/` — dependency-free HTML/CSS/vanilla-JS demo UI (`index.html`,
+  `app.js`, `styles.css`), served by FastAPI itself via `StaticFiles(html=True)` mounted
+  at `/` (mounted after the API router, so it never shadows `/health`,
+  `/api/v1/*`, `/docs`, `/openapi.json`). Search form (dropdowns populated from
+  `GET /api/v1/catalog-options`, so it can never submit an unsupported value), up-to-3
+  result cards showing name/categories/city/starting price/explanation/semantic
+  relevance-labeled score/synthetic & imputed badges, visibly distinct MATCHED /
+  CATEGORY_ABSENT / NO_MATCH (+ rejection-reason summary) states, and a chat panel that
+  posts to `/api/v1/chat` and syncs the returned `search` back into the form fields and
+  the returned `recommendation` into the cards.
+- `pyproject.toml` — added `openai`, `python-dotenv`.
+- 12 new tests (`backend/tests/test_chat.py`): full-search extraction, date-only /
+  budget-only / preferences-only follow-ups each change only that field, missing-required
+  → `CLARIFY`, explicit LLM `CLARIFY` honored even with a full patch, malformed LLM output
+  handled safely, LLM transport failure never becomes `NO_MATCH`, unconfigured-LLM message,
+  chat and a direct `recommend()` call agree on identical result IDs for the same query,
+  plus 2 `TestClient`-level checks (unconfigured LLM via the real route, mocked LLM via
+  `app.dependency_overrides[get_llm_complete_fn]`). All mock the LLM — no network/paid
+  API calls in the suite.
+
+**Verified:**
+- `pytest` — 85/85 passing (73 Phase 1–3 unchanged + 12 new).
+- `python -m evaluation.run` — 12/12 semantic cases, 0 strict/soft failures (unchanged).
+- `GET /health`, `GET /docs`, `GET /` (200, serves `index.html`), `GET /app.js`,
+  `GET /styles.css`, `GET /api/v1/catalog-options` all verified live via `uvicorn`.
+- `POST /api/v1/recommend` manually re-verified for all three states: MATCHED (Алматы /
+  Ведущий / корпоратив / 2026-10-10 / 1,000,000 KZT → 3 cards with explanations),
+  CATEGORY_ABSENT (Астана / Ресторан), NO_MATCH (Алматы / Ведущий / budget 100,000, with
+  non-empty `rejection_summary`).
+- Chat without `LLM_API_KEY` set: `/api/v1/chat` returns `action: "ANSWER"`,
+  `"AI-помощник не настроен. Обычный поиск продолжает работать."`, `recommendation: null`
+  — confirmed the structured search stays fully functional either way.
+- **Real 3-turn live demo**, run against the user-supplied `LLM_API_KEY`/`LLM_MODEL`/
+  `LLM_BASE_URL` (OpenAI-compatible endpoint) in `backend/.env`:
+  1. *"Нужен ведущий в Алматы на корпоратив 10 октября 2026, бюджет до 700 тысяч. Хочется
+     спокойной интеллигентной подачи."* → `action=SEARCH`, full search extracted in one
+     turn, `MATCHED` with 2 cards (`HK-29829`, `HK-88430`).
+  2. *"А теперь хочется кого-нибудь повеселее, с танцами и развлечениями"* →
+     `action=UPDATE_SEARCH`, only `preferences` changed (city/date/format/category/budget
+     all identical to turn 1), semantic scores recomputed, still `MATCHED`.
+  3. *"А теперь 17 октября"* → `action=UPDATE_SEARCH`, only `event_date` changed to
+     `2026-10-17`, availability recalculated → `NO_MATCH` (verified identical to calling
+     `POST /api/v1/recommend` directly with the same fields — chat never diverges from the
+     engine).
+  - Also verified the `CLARIFY` path live: *"Нужен фотограф на свадьбу"* →
+    `missing_fields: ["city", "event_date", "budget_kzt"]`, a concise Russian question,
+    no invented values.
+- Found and fixed one real integration bug during the live run: the configured model
+  rejected the `max_tokens` parameter (`"Unsupported parameter: 'max_tokens' ... Use
+  'max_completion_tokens' instead"`) — switched `llm_client.py` to
+  `max_completion_tokens`, confirmed working against the same live endpoint before
+  re-running the 3-turn demo above.
+
+**Provider note:** the brief's example env names (`LLM_API_KEY`/`LLM_MODEL`/
+`LLM_BASE_URL`) are provider-agnostic by design; the actual `backend/.env` supplied for
+this session pointed at an OpenAI-compatible endpoint, so `llm_client.py` implements the
+OpenAI Chat Completions API (via the `openai` SDK) rather than Anthropic.
+
 ## Not started
 
-Phase 4 (chat assistant) and Phase 5 (PostgreSQL/persistence) in `TASKS.md`. Not touched
-this session.
+Phase 5 (PostgreSQL/persistence, alternative-suggestion computation) in `TASKS.md`. Not
+touched this session — out of scope per the deadline rules (no PostgreSQL/Redis/auth/
+persistent chat history).

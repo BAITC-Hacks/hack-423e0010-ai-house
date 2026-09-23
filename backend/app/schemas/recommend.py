@@ -60,3 +60,16 @@ class RecommendResponse(BaseModel):
     results: list[ContractorCard]
     rejected: list[RejectedCandidate]
     rejection_summary: dict[str, int] = {}
+
+
+class CatalogOptions(BaseModel):
+    """Known allowed values, for building a form that never invents
+    unsupported categories/formats/etc.
+    """
+
+    cities: list[str]
+    categories: list[str]
+    event_formats: list[str]
+    languages: list[str]
+    calendar_start: date | None
+    calendar_end: date | None

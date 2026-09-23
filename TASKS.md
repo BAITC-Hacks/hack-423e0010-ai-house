@@ -35,11 +35,17 @@
 - [x] Model reproducibility: `EMBEDDING_MODEL_NAME`/`EMBEDDING_MODEL_REVISION` env-configurable, documented in `docs/spec.md` §11
 - [x] `docs/spec.md` §9–§11, `PROGRESS.md` updated
 
-## Phase 4 — chat assistant (future, not started)
+## Phase 4 — chat assistant + minimal demo UI (this session)
 
-- [ ] Stateful selection-request object (create/patch), matching the docx's `/selection-requests` API shape
-- [ ] Bounded toolset: `get_catalog_options`, `update_request`, `recommend`, `get_profile`, `compare_candidates`, `suggest_alternatives`
-- [ ] Chat endpoint calling the same recommendation engine — LLM never picks final contractors and never generates `explanation` wording (that stays deterministic per Phase 3)
+- [x] `POST /api/v1/chat` — stateless: client sends `current_search` every turn, no DB/Redis/session
+- [x] LLM used only as a structured intent parser (`action` + `patch` over search fields) via a direct OpenAI-compatible Chat Completions call (`app/services/llm_client.py`) — no agent framework, no tool-calling loop
+- [x] Bounded action enum: `SEARCH` / `UPDATE_SEARCH` / `CLARIFY` / `ANSWER` (`app/domain/enums.ChatAction`)
+- [x] Chat orchestration (`app/services/chat.py`, framework-independent) applies the LLM's patch, checks required fields (city/event_date/event_format/category/budget_kzt), and calls the *same* `app.services.recommendation.recommend` + `app.services.response_builder.build_recommend_response` used by `/api/v1/recommend` — LLM never selects/ranks contractors, never writes the explanation
+- [x] `GET /api/v1/catalog-options` — real dataset values (cities/categories/event formats/languages/calendar window) for the form and the LLM's field vocabulary
+- [x] No-LLM-configured and malformed/failed-LLM-call paths both degrade to a clear `ANSWER` message, never a crash, never a fabricated `NO_MATCH`
+- [x] Minimal dependency-free static UI (`backend/app/static/`) served by FastAPI itself at `/` — search form, result cards (MATCHED/CATEGORY_ABSENT/NO_MATCH states, explanations, semantic score, synthetic/imputed badges), chat panel that syncs the form + cards from `/api/v1/chat` responses
+- [x] Tests: `backend/tests/test_chat.py` (12 cases — full/partial patch extraction, hard-filter preservation, CLARIFY on missing fields, malformed/failed LLM handled safely, chat and direct `/recommend` agree on the same query, unconfigured-LLM behavior, 2 API-level `TestClient` cases)
+- [x] Manually verified 3-turn live demo against the real configured LLM (see `PROGRESS.md`)
 
 ## Phase 5 — persistence & infra (future, not started)
 

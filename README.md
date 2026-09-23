@@ -189,6 +189,69 @@ The distinction matters: `CATEGORY_ABSENT` means "expand the catalog for this ci
 
 An `event_date` outside the dataset's known calendar coverage window is rejected explicitly as an HTTP `422` — not silently treated as available.
 
+### `POST /api/v1/chat` — AI assistant (optional)
+
+A stateless conversational layer over the exact same recommendation engine as
+`/api/v1/recommend`. **The LLM interprets conversation but never selects or ranks
+contractors** — it only extracts a structured intent (`action` + a `patch` of search
+fields); the backend validates and applies that patch, then calls
+`app.services.recommendation.recommend` — the same function, same rules, same output —
+to get the actual results. The LLM never sees contractor data and never writes the
+`explanation` text.
+
+Request:
+
+```json
+{
+  "message": "А теперь 17 октября",
+  "current_search": {
+    "city": "Алматы", "event_date": "2026-10-10", "event_format": "корпоратив",
+    "category": "Ведущий", "budget_kzt": 700000, "preferences": "спокойная интеллигентная подача"
+  }
+}
+```
+
+`current_search` is optional and sent back by the client on every turn — the server keeps
+no session/chat history (no database, no Redis).
+
+Response (`ChatResponse`): `action` (`SEARCH` / `UPDATE_SEARCH` / `CLARIFY` / `ANSWER`),
+`assistant_message` (short Russian reply), `search` (the full updated state — the client
+re-syncs its form from this), `missing_fields`, and `recommendation` (the same
+`RecommendResponse` shape as `/api/v1/recommend`, or `null` while required fields are
+still missing or the turn was purely conversational).
+
+If a required field (city/event_date/event_format/category/budget_kzt) is still missing
+after applying the patch, the response is `CLARIFY` with a concise Russian question — the
+backend never guesses a missing mandatory value.
+
+`GET /api/v1/catalog-options` returns the real dataset's cities/categories/event
+formats/languages/calendar window, used both by the web form and injected into the LLM's
+prompt so it only ever proposes values that actually exist in the catalog.
+
+**Configuration** (`backend/.env`, see `backend/.env.example`) — any OpenAI-compatible
+Chat Completions API:
+
+| variable | required | notes |
+|---|---|---|
+| `LLM_API_KEY` | for chat only | unset → `/api/v1/chat` still responds, with `"AI-помощник не настроен. Обычный поиск продолжает работать."` |
+| `LLM_MODEL` | no | default `gpt-4o-mini` |
+| `LLM_BASE_URL` | no | only for a non-default/gateway endpoint |
+
+**Core recommendation (`/api/v1/recommend`, and the web UI's manual search) works fully
+without any LLM credentials. The AI assistant panel additionally requires
+`LLM_API_KEY` configured.**
+
+### Minimal web UI
+
+A dependency-free HTML/CSS/vanilla-JS demo page is served directly by the backend at
+**`http://127.0.0.1:8000/`** — no separate frontend process, no build step, just
+`uvicorn app.main:app --reload`. It has the structured search form (options populated
+from `GET /api/v1/catalog-options`), up to 3 result cards per search (with the
+deterministic explanation front and center, semantic relevance score, and
+synthetic/imputed badges), visibly distinct `MATCHED` / `CATEGORY_ABSENT` / `NO_MATCH`
+states, and a chat panel wired to `/api/v1/chat` that syncs the form and result cards from
+the assistant's replies.
+
 ## Quick Start
 
 Requires **Python 3.11+**.
@@ -208,11 +271,14 @@ curl http://127.0.0.1:8000/health
 # {"status":"ok"}
 ```
 
-Open Swagger UI at **http://127.0.0.1:8000/docs**.
+Open Swagger UI at **http://127.0.0.1:8000/docs**, or the demo web UI at **http://127.0.0.1:8000/**.
 
 > **First startup is slower.** The `intfloat/multilingual-e5-base` embedding model (~278M params) is downloaded from the Hugging Face Hub and cached locally (`~/.cache/huggingface`) on first load — this can take a while depending on network speed. Startup also precomputes embeddings for the whole catalog once. Subsequent starts use the local cache and take a few seconds; warm requests after startup are consistently fast (see [Performance](#performance)).
 
-No API key or external service is required — the model runs locally once downloaded, and the catalog is loaded from the CSV in this repository.
+No API key or external service is required for the recommendation engine or the web UI's
+manual search — the embedding model runs locally once downloaded, and the catalog is
+loaded from the CSV in this repository. The AI chat assistant is the one exception — see
+[`POST /api/v1/chat`](#post-apiv1chat--ai-assistant-optional).
 
 ## Demo scenarios
 
@@ -350,12 +416,16 @@ backend/
     repositories/    # CSV loading/normalization, in-memory catalog
     schemas/         # Pydantic v2 request/response models
     services/
-      recommendation.py  # the single recommendation engine (hard filter + rank)
-      semantic.py         # E5 encoder, semantic ranking
+      recommendation.py    # the single recommendation engine (hard filter + rank)
+      semantic.py          # E5 encoder, semantic ranking
       evidence.py          # description segmentation, evidence selection
       explanation.py       # deterministic explanation text generation
+      response_builder.py  # RecommendResult -> API response, shared by /recommend and /chat
+      chat.py               # chat orchestration: applies LLM patch, calls recommend()
+      llm_client.py          # thin OpenAI-compatible Chat Completions wrapper
+    static/             # dependency-free HTML/CSS/JS demo UI, served at "/"
     config.py
-    main.py           # FastAPI app + startup warm-up (lifespan)
+    main.py           # FastAPI app + startup warm-up (lifespan) + static mount
   evaluation/         # curated semantic-ranking evaluation cases + runner
   tests/
   pyproject.toml

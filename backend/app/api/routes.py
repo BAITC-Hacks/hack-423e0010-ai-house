@@ -1,20 +1,21 @@
-from collections import Counter
-
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import get_catalog_repository, get_evidence_index, get_semantic_ranker
-from app.repositories.catalog import CatalogRepository
-from app.schemas.recommend import (
-    ContractorCard,
-    RecommendationEvidence,
-    RecommendRequest,
-    RecommendResponse,
-    RejectedCandidate,
+from app.api.deps import (
+    catalog_options,
+    get_catalog_repository,
+    get_evidence_index,
+    get_llm_complete_fn,
+    get_semantic_ranker,
 )
+from app.repositories.catalog import CatalogRepository
+from app.schemas.chat import ChatRequest, ChatResponse
+from app.schemas.recommend import CatalogOptions, RecommendRequest, RecommendResponse
+from app.services.chat import run_chat
 from app.services.evidence import DescriptionEvidenceIndex
-from app.services.explanation import build_explanation
+from app.services.llm_client import LLMCompleteFn
 from app.services.recommendation import RecommendQuery, recommend
-from app.services.semantic import ScoredContractor, SemanticRanker
+from app.services.response_builder import build_recommend_response
+from app.services.semantic import SemanticRanker
 
 router = APIRouter()
 
@@ -24,34 +25,18 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _to_card(query: RecommendQuery, scored: ScoredContractor) -> ContractorCard:
-    contractor = scored.contractor
-    explanation = build_explanation(query, scored)
-    return ContractorCard(
-        id=contractor.id,
-        name=contractor.name,
-        categories=sorted(contractor.categories),
-        city=contractor.city,
-        price_from_kzt=contractor.price_from_kzt,
-        event_formats=sorted(contractor.event_formats),
-        languages=sorted(contractor.languages),
-        max_hours=contractor.max_hours,
-        synthetic=contractor.synthetic,
-        city_imputed=contractor.city_imputed,
-        price_imputed=contractor.price_imputed,
-        semantic_score=scored.semantic_score,
-        explanation=explanation.text,
-        evidence=RecommendationEvidence(
-            available_on_date=explanation.available_on_date,
-            matched_event_format=explanation.matched_event_format,
-            matched_language=explanation.matched_language,
-            requested_duration_hours=explanation.requested_duration_hours,
-            max_hours=explanation.max_hours,
-            price_from_kzt=explanation.price_from_kzt,
-            budget_kzt=explanation.budget_kzt,
-            semantic_excerpt=explanation.semantic_excerpt,
-            semantic_score=explanation.semantic_score,
-        ),
+@router.get("/api/v1/catalog-options", response_model=CatalogOptions)
+def catalog_options_route(
+    repo: CatalogRepository = Depends(get_catalog_repository),
+) -> CatalogOptions:
+    options = catalog_options(repo)
+    return CatalogOptions(
+        cities=options["city"],
+        categories=options["category"],
+        event_formats=options["event_format"],
+        languages=options["language"],
+        calendar_start=repo.calendar_start,
+        calendar_end=repo.calendar_end,
     )
 
 
@@ -83,17 +68,15 @@ def recommend_contractors(
         preferences=request.preferences,
     )
     result = recommend(query, repo, ranker, evidence_index)
+    return build_recommend_response(query, result)
 
-    reason_counts: Counter[str] = Counter()
-    for rejected in result.rejected:
-        reason_counts.update(rejected.reasons)
 
-    return RecommendResponse(
-        status=result.status,
-        results=[_to_card(query, c) for c in result.results],
-        rejected=[
-            RejectedCandidate(contractor_id=r.contractor.id, reasons=list(r.reasons))
-            for r in result.rejected
-        ],
-        rejection_summary=dict(reason_counts),
-    )
+@router.post("/api/v1/chat", response_model=ChatResponse)
+def chat(
+    request: ChatRequest,
+    repo: CatalogRepository = Depends(get_catalog_repository),
+    ranker: SemanticRanker = Depends(get_semantic_ranker),
+    evidence_index: DescriptionEvidenceIndex = Depends(get_evidence_index),
+    llm_complete: LLMCompleteFn | None = Depends(get_llm_complete_fn),
+) -> ChatResponse:
+    return run_chat(request, repo, ranker, evidence_index, llm_complete)
